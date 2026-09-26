@@ -1,4 +1,4 @@
-# Tram Forecast MVP
+# Tram Forecast MVP.
 
 MVP сервиса прогнозирования пассажиропотока.
 
