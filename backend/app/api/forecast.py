@@ -1,21 +1,16 @@
-from typing import Optional
-from fastapi import APIRouter, Query
-from app.services.forecast_service import service
+from fastapi import APIRouter, Depends
+
+from app.api.params import forecast_query
+from app.services import forecast_service as fs
 
 router = APIRouter(tags=["forecast"])
 
-@router.get("/forecast")
-def forecast(
-    route: Optional[str] = None,
-    date_from: Optional[str] = Query(None, alias="from"),
-    date_to: Optional[str] = Query(None, alias="to"),
-):
-    return service.forecast(route, date_from, date_to)
 
-@router.get("/summary")
-def summary(
-    route: Optional[str] = None,
-    date_from: Optional[str] = Query(None, alias="from"),
-    date_to: Optional[str] = Query(None, alias="to"),
-):
-    return service.summary(route, date_from, date_to)
+@router.get("/forecast", summary="Прогноз посадок с агрегацией по времени")
+def forecast(q: fs.Query = Depends(forecast_query)):
+    return fs.forecast(q)
+
+
+@router.get("/summary", summary="Сводка: итог, пики, разбивка по типу дня")
+def summary(q: fs.Query = Depends(forecast_query)):
+    return fs.summary(q)

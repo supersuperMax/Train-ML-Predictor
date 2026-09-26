@@ -6,7 +6,9 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
@@ -18,17 +20,30 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tram -d tram"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
   api:
     build:
       context: .
       dockerfile: backend/Dockerfile
     environment:
-      DATABASE_URL: postgresql://tram:tram@postgres:5432/tram
-    ports:
-      - "8000:8000"
-    depends_on:
-      - postgres
+      SNAPSHOT_DIR: /data/snapshot
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    volumes:
+      - ./data/snapshot:/data/snapshot:ro
+    # Профиль ресурсов из ТЗ: один контейнер 2 vCPU / 2 ГБ.
+    cpus: 2
+    mem_limit: 2g
+    # Порт наружу не публикуется: API доступен через фронтенд (http://localhost:3000/api/),
+    # поэтому сервис можно масштабировать: docker compose up --scale api=3
+    expose:
+      - "8000"
+    restart: unless-stopped
 
   worker:
     build:
@@ -36,8 +51,19 @@ services:
       dockerfile: worker/Dockerfile
     environment:
       DATABASE_URL: postgresql://tram:tram@postgres:5432/tram
+      DATA_DIR: /data
+      MODEL_DIR: /model
+      MODEL_MODE: ${MODEL_MODE:-file}
+      MODEL_FALLBACK: ${MODEL_FALLBACK:-baseline}
+      PIPELINE_INTERVAL_MIN: ${PIPELINE_INTERVAL_MIN:-60}
+      PIPELINE_POLL_SEC: ${PIPELINE_POLL_SEC:-30}
+    volumes:
+      - ./data:/data
+      - ./model:/model:ro
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_data:
