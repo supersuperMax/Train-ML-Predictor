@@ -58,23 +58,23 @@ export default function MapPanel({ date, route, routeHasStops, selectedStop, ava
   };
 
   return (
-    <section className="card map-card">
-      <div className="card-head">
-        <h2>Загрузка остановок на карте</h2>
-        <span className="muted">
+    <section className="card">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="text-[17px] font-bold">Загрузка остановок на карте</h2>
+        <span className="text-muted">
           {dateRu(date)}, {pad2(hour)}:00
           {state.data && state.data.source !== 'model' ? ` · ${SOURCE_LABEL[state.data.source]}` : ''}
         </span>
       </div>
       {route !== null && !routeHasStops && (
-        <div className="alert info">Для маршрута № {route} в справочнике нет координат остановок — на карте показаны все маршруты с остановками.</div>
+        <div className="alert alert-info">Для маршрута № {route} в справочнике нет координат остановок — на карте показаны все маршруты с остановками.</div>
       )}
       {stops.error && <ErrorBox error={stops.error} />}
       {state.error && <ErrorBox error={state.error} />}
       <MapView stops={stops.data} state={state.data} selectedStop={selectedStop} onSelectStop={onSelectStop} />
-      <div className="timeline">
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <button
-          className="button"
+          className="btn"
           onClick={() => {
             setLive(false);
             setPlaying((p) => !p);
@@ -85,6 +85,7 @@ export default function MapPanel({ date, route, routeHasStops, selectedStop, ava
         </button>
         <input
           type="range"
+          className="min-w-[140px] flex-1 accent-accent"
           min={0}
           max={23}
           value={hour}
@@ -95,13 +96,13 @@ export default function MapPanel({ date, route, routeHasStops, selectedStop, ava
           }}
           aria-label="Час суток"
         />
-        <span className="hour">{pad2(hour)}:00</span>
-        <button className={`button ${live ? 'active' : ''}`} onClick={() => (live ? setLive(false) : goLive())}>
+        <span className="min-w-12 font-bold tabular-nums">{pad2(hour)}:00</span>
+        <button className={live ? 'btn btn-active' : 'btn'} onClick={() => (live ? setLive(false) : goLive())}>
           {live ? '● Сейчас' : 'Сейчас'}
         </button>
       </div>
-      {note && live && <p className="muted small">{note}</p>}
-      <p className="muted small">
+      {note && live && <p className="mt-3 text-[13px] text-muted">{note}</p>}
+      <p className="mt-3 text-[13px] text-muted">
         Остановочный прогноз — доля прогноза маршрута: посадки убывают к конечной, направления делят поток поровну. Координаты есть в справочнике только для части маршрутов. Нажмите на остановку, чтобы построить её график.
       </p>
     </section>

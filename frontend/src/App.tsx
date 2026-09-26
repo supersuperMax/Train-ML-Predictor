@@ -42,14 +42,14 @@ export default function App() {
   const routeInfo = routes.data?.find((r) => r.route === filters?.route);
 
   return (
-    <main>
-      <header>
+    <main className="mx-auto max-w-[1400px] px-4 pt-6 pb-12">
+      <header className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1>Прогноз пассажиропотока</h1>
-          <p className="muted">Трамвайные маршруты Москвы · посадки (успешные валидации) по часам</p>
+          <h1 className="mb-1 text-[28px] font-bold">Прогноз пассажиропотока</h1>
+          <p className="text-muted">Трамвайные маршруты Москвы · посадки (успешные валидации) по часам</p>
         </div>
         {meta.data?.ready && (
-          <div className="meta muted small">
+          <div className="text-right text-[13px] leading-normal text-muted">
             <div>Прогноз: {dateRu(meta.data.available!.from)} — {dateRu(meta.data.available!.to)}</div>
             <div>Модель: {meta.data.model}</div>
             <div title={meta.data.version}>Обновлён: {new Date(meta.data.created_at!).toLocaleString('ru-RU')}</div>
@@ -60,13 +60,13 @@ export default function App() {
       {meta.error && <ErrorBox error={meta.error} onRetry={() => setRetry((r) => r + 1)} />}
       {meta.loading && !meta.data && <Loading text="Подключение к сервису…" />}
       {meta.data && !meta.data.ready && (
-        <div className="alert info">
+        <div className="alert alert-info">
           Прогноз ещё строится: пайплайн не опубликовал данные. Страница обновится автоматически.
-          {meta.data.last_run?.error && <div className="small">Последний прогон завершился ошибкой: {meta.data.last_run.error}</div>}
+          {meta.data.last_run?.error && <div className="text-[13px]">Последний прогон завершился ошибкой: {meta.data.last_run.error}</div>}
         </div>
       )}
       {meta.data?.last_run?.status === 'error' && meta.data.ready && (
-        <div className="alert warn small">
+        <div className="alert alert-warn text-[13px]">
           Последний прогон пайплайна завершился ошибкой, показан предыдущий прогноз: {meta.data.last_run.error}
         </div>
       )}
@@ -75,11 +75,11 @@ export default function App() {
         <>
           <FiltersPanel filters={filters} onChange={update} routes={routes.data ?? []} stops={allStops.data?.stops ?? []} available={meta.data.available} />
 
-          <div className="grid">
-            <section className="card chart-card">
-              <div className="card-head">
-                <h2>{HORIZON_TITLE[filters.horizon]}</h2>
-                <span className="muted">
+          <div className="grid items-start gap-5 wide:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+            <section className="card">
+              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+                <h2 className="text-[17px] font-bold">{HORIZON_TITLE[filters.horizon]}</h2>
+                <span className="text-muted">
                   {filters.route === null ? 'все маршруты' : `маршрут № ${filters.route}`}
                   {forecast.data?.query.stop_name ? ` · ${forecast.data.query.stop_name}` : ''}
                 </span>
@@ -88,14 +88,14 @@ export default function App() {
               {forecast.loading && !forecast.data && <Loading />}
               {forecast.data && (
                 <>
-                  <div className={forecast.loading ? 'stale' : ''}>
+                  <div className={forecast.loading ? 'opacity-55 transition-opacity' : 'transition-opacity'}>
                     <ForecastChart data={forecast.data} />
                   </div>
-                  <p className="muted small">
+                  <p className="my-3 text-[13px] text-muted">
                     {dateRu(forecast.data.query.from)} — {dateRu(forecast.data.query.to)} · итого {num(forecast.data.total)} посадок
                     {forecast.data.query.truncated && ' · период обрезан до доступного прогноза'}
                     {forecast.data.points.some((p) => p.source !== 'model') && (
-                      <> · <span className="badge">серые столбцы — {SOURCE_LABEL.baseline}, за пределами горизонта модели</span></>
+                      <> · <span className="rounded-md bg-[#eef0f4] px-1.5 py-px">серые столбцы — {SOURCE_LABEL.baseline}, за пределами горизонта модели</span></>
                     )}
                   </p>
                 </>
@@ -120,13 +120,13 @@ export default function App() {
             </Suspense>
           </div>
 
-          <section className="card factors">
-            <h2>Учитываемые факторы</h2>
-            <ul>
+          <section className="card mt-5">
+            <h2 className="text-[17px] font-bold">Учитываемые факторы</h2>
+            <ul className="mt-2.5 list-disc columns-[2_280px] pl-[18px] [&_li]:mb-1">
               {Object.entries(meta.data.factors ?? {}).map(([k, v]) => (
                 <li key={k}>{v}</li>
               ))}
-              <li className="muted">Погода: {meta.data.weather}</li>
+              <li className="text-muted">Погода: {meta.data.weather}</li>
             </ul>
           </section>
         </>

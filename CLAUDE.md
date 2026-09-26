@@ -49,14 +49,15 @@ Data flows one way: **worker → snapshot files → api → frontend**. The API 
   - `api/params.py`: the shared query dependency for `/forecast`, `/summary` and export;
   - `errors.py`: all errors go out as `{"error": {"code", "message"}}`; raise `bad_request` / `not_found` / `not_ready` from `app.errors`, don't raise `HTTPException`;
   - `main.py`: an ETag/304 middleware keyed on snapshot version + URL.
-- **frontend/** (React 19, TS 5.9, Vite 8, Recharts 3, MapLibre 6 with OSM raster tiles, all versions pinned):
+- **frontend/** (React 19, TS 5.9, Vite 8, Tailwind CSS 4, Recharts 3, MapLibre 6 with OSM raster tiles, all versions pinned):
+  - styling is Tailwind v4 via `@tailwindcss/vite` (no `tailwind.config.js`). Theme tokens (`ink`, `muted`, `page`, `line`, `accent`…, breakpoint `wide` = 1080px) and the few component classes (`card`, `btn`, `control`, `field-label`, `alert-*`) live in `src/style.css`; everything else is utilities in JSX. Scanning is limited to `src/` (`source(".")`). Write class names as full literal strings — never build them by concatenation, or Tailwind won't generate them;
   - `src/api.ts`: `useApi` (abortable fetch; surfaces the backend's `error.message`) and `forecastParams`, which maps UI filters to query params;
   - the map (`components/MapPanel.tsx`, `MapView.tsx`) is lazy-loaded as a separate chunk;
   - the API base is `import.meta.env.VITE_API ?? '/api'`.
 - **Docker**:
-  - build contexts are the repo root, so `COPY` paths are relative to `server/`;
+  - build contexts are the repo root, so `COPY` paths are relative to `server/`; `.dockerignore` keeps `node_modules`, `dist` and generated `data/` out of the context;
   - worker bind-mounts `./data:/data` and `./model:/model:ro`, and api mounts `./data/snapshot` read-only. Generated `data/store/` and `data/snapshot/` are gitignored;
-  - api is limited to 2 CPU / 2 GB and runs `WEB_CONCURRENCY` uvicorn workers. It scales with `docker compose up --scale api=N`, after which the `frontend` container must be restarted so nginx re-resolves `api`.
+  - api is limited to 2 CPU / 2 GB and runs `WEB_CONCURRENCY` uvicorn workers. It scales with `docker compose up --scale api=N`. nginx (`frontend/nginx.conf`) re-resolves `api` via Docker DNS (`resolver 127.0.0.11`, `proxy_pass $api`), so recreated or scaled api containers are picked up without restarting nginx. Do not switch back to a static `upstream` block: it pins the IP at startup and gives 502 after api is recreated. nginx-generated 502/504 are returned as JSON `api_unavailable`.
 
 ## Data caveats
 

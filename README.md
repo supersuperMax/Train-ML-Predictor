@@ -19,7 +19,7 @@ model/ (модель) ─────┘  ingest → normalize →   │
 
 | Сервис | Стек | Роль |
 |---|---|---|
-| `frontend` | React 19, TypeScript 5, Vite, Recharts, MapLibre + OSM | Дашборд. nginx раздаёт статику и проксирует `/api/` на `api` |
+| `frontend` | React 19, TypeScript 5, Vite, Tailwind CSS 4, Recharts, MapLibre + OSM | Дашборд. nginx раздаёт статику и проксирует `/api/` на `api` |
 | `api` | FastAPI, numpy | REST API. Держит опубликованный прогноз в памяти и перечитывает его при новой версии без перезапуска |
 | `worker` | pandas, pyarrow | Пайплайн: приём → нормализация → геопривязка → прогноз модели → публикация snapshot |
 | `postgres` | PostgreSQL 16 | Хранилище истории, прогноза, справочников и журнала прогонов |
@@ -38,7 +38,7 @@ docker compose up --build
 
 При старте worker сразу выполняет полный прогон пайплайна (несколько секунд), и дашборд показывает прогноз. Пока прогноз не опубликован, API отвечает `503` с понятным сообщением, а дашборд ждёт и сам обновляется.
 
-Масштабирование API: `docker compose up --scale api=3`. Чтобы nginx увидел новые реплики, перезапустите `frontend`.
+Масштабирование API: `docker compose up --scale api=3`. nginx находит реплики через DNS Docker (обновление раз в 10 с), перезапускать `frontend` не нужно. Если API недоступен, nginx отвечает JSON-ошибкой `api_unavailable`, и дашборд показывает понятное сообщение.
 
 ### Локальная разработка без Docker
 

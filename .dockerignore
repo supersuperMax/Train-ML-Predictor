@@ -1,0 +1,8 @@
+.git
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+data/store
+data/snapshot
+data/incoming

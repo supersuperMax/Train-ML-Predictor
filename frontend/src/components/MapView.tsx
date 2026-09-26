@@ -138,18 +138,18 @@ export default function MapView({ stops, state, selectedStop, onSelectStop }: Pr
 
   const routes = stops ? [...new Set(stops.lines.map((l) => l.route))].sort((a, b) => a - b) : [];
   return (
-    <div className="map-wrap">
-      <div ref={container} className="map" />
-      <div className="map-legend">
-        <div className="scale">
+    <div className="relative">
+      <div ref={container} className="h-[460px] overflow-hidden rounded-xl" />
+      <div className="absolute bottom-2.5 left-2.5 flex max-w-[calc(100%-20px)] flex-col gap-1.5 rounded-[10px] bg-white/90 px-2.5 py-2 text-xs">
+        <div className="flex items-center gap-1.5">
           <span>0</span>
-          <i />
+          <i className="load-scale h-2 w-[90px] rounded" />
           <span>{num(state?.max ?? 0)}</span>
         </div>
-        <div className="routes-legend">
+        <div className="flex flex-wrap gap-2">
           {routes.map((r, i) => (
             <span key={r}>
-              <i style={{ background: ROUTE_COLORS[i % ROUTE_COLORS.length] }} />№ {r}
+              <i className="mr-1 inline-block h-1 w-3 rounded-sm align-middle" style={{ background: ROUTE_COLORS[i % ROUTE_COLORS.length] }} />№ {r}
             </span>
           ))}
         </div>
