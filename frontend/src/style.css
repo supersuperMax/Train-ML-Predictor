@@ -1,114 +1,18 @@
-:root {
-  --text: #172033;
-  --muted: #5b6678;
-  --bg: #f5f7fb;
-  --card: #ffffff;
-  --border: #e4e8f0;
-  --accent: #1468e8;
-  --accent-soft: #e8f0fd;
-  --danger: #c92a2a;
-  --danger-soft: #fff0f0;
-  --warn-soft: #fff8e1;
-  font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  color: var(--text);
-  background: var(--bg);
-}
+@import "tailwindcss" source("."); /* сканируем только src/ — одинаково локально и в Docker */
+@source "../index.html";
 
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); }
-main { max-width: 1400px; margin: auto; padding: 24px 16px 48px; }
-h1 { margin: 0 0 4px; font-size: 28px; }
-h2 { margin: 0; font-size: 17px; }
-a { color: var(--accent); text-decoration: none; font-weight: 600; }
+/* Тёмная тема — по классу dark на <html> (ставится в index.html до загрузки бандла и хуком useTheme) */
+@custom-variant dark (&:where(.dark, .dark *));
 
-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
-header p { margin: 0; }
-.meta { text-align: right; line-height: 1.5; }
-.muted { color: var(--muted); }
-.small { font-size: 13px; }
-
-.card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 20px;
-  margin-bottom: 20px;
-  box-shadow: 0 4px 18px #1720330a;
-  min-width: 0;
-}
-.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-
-.filters { display: flex; flex-wrap: wrap; gap: 16px 20px; align-items: flex-end; }
-.field { display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
-.label { font-weight: 600; font-size: 13px; color: var(--muted); }
-.inline { display: flex; align-items: center; gap: 6px; }
-select, input[type='date'] {
-  padding: 9px 11px;
-  border: 1px solid #ccd3df;
-  border-radius: 8px;
-  background: white;
-  font: inherit;
-  color: inherit;
-  max-width: 320px;
-}
-select:disabled { background: #f0f2f6; color: var(--muted); }
-
-.segmented { display: inline-flex; border: 1px solid #ccd3df; border-radius: 8px; overflow: hidden; }
-.segmented button { border: 0; background: white; padding: 9px 16px; font: inherit; cursor: pointer; color: var(--text); }
-.segmented button + button { border-left: 1px solid #ccd3df; }
-.segmented button.active { background: var(--accent); color: white; }
-
-.button {
-  display: inline-flex; align-items: center; gap: 6px;
-  border: 1px solid #ccd3df; background: white; border-radius: 8px;
-  padding: 8px 14px; font: inherit; font-weight: 600; color: var(--text); cursor: pointer; white-space: nowrap;
-}
-.button:hover { border-color: var(--accent); color: var(--accent); }
-.button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-button.link { border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
-
-.grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; align-items: start; }
-.grid > .card { margin-bottom: 0; }
-@media (max-width: 1080px) { .grid { grid-template-columns: minmax(0, 1fr); } }
-
-.stale { opacity: 0.55; transition: opacity 0.2s; }
-
-.summary { margin-top: 16px; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-.stat { background: var(--bg); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
-.stat span { font-size: 12px; color: var(--muted); }
-.stat b { font-size: 22px; }
-.stat small { color: var(--muted); font-size: 12px; }
-.daytypes { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 14px; }
-.daytypes th, .daytypes td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-.daytypes th { color: var(--muted); font-weight: 600; font-size: 12px; }
-.daytypes td:not(:first-child), .daytypes th:not(:first-child) { text-align: right; }
-
-.export { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
-
-.map-wrap { position: relative; }
-.map { height: 460px; border-radius: 12px; overflow: hidden; }
-.map-legend {
-  position: absolute; left: 10px; bottom: 10px; background: #ffffffe8; border-radius: 10px;
-  padding: 8px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; max-width: calc(100% - 20px);
-}
-.map-legend .scale { display: flex; align-items: center; gap: 6px; }
-.map-legend .scale i { width: 90px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #2dc26b, #f5b700, #e5383b); }
-.routes-legend { display: flex; flex-wrap: wrap; gap: 8px; }
-.routes-legend i { display: inline-block; width: 12px; height: 4px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
-.timeline { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
-.timeline input[type='range'] { flex: 1; min-width: 140px; accent-color: var(--accent); }
-.timeline .hour { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 48px; }
-
-.alert { border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
-.alert.error { background: var(--danger-soft); color: var(--danger); border: 1px solid #f5c2c2; }
-.alert.info { background: var(--accent-soft); color: #0f4fb3; border: 1px solid #c9dbfa; }
-.alert.warn { background: var(--warn-soft); color: #7a5b00; border: 1px solid #f3e0a0; }
-.badge { background: #eef0f4; border-radius: 6px; padding: 1px 6px; }
-
-.loading { display: flex; align-items: center; gap: 10px; color: var(--muted); padding: 24px 0; }
-.spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.factors ul { margin: 10px 0 0; padding-left: 18px; columns: 2 280px; }
-.factors li { margin-bottom: 4px; }
+/* Попапы MapLibre: у них свой белый фон, а текст наследовался от body и в тёмной теме становился белым.
+   Специфичность повышена через :root — CSS MapLibre грузится позже, в чанке карты. */
+:root .maplibregl-popup-content { color: #0f172a; font-size: 13px; line-height: 1.4; }
+:root.dark .maplibregl-popup-content { background: #0f172a; color: #e2e8f0; box-shadow: 0 0 0 1px #334155, 0 4px 12px rgb(0 0 0 / 0.5); }
+:root.dark .maplibregl-popup-anchor-top .maplibregl-popup-tip,
+:root.dark .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+:root.dark .maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color: #0f172a; }
+:root.dark .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+:root.dark .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+:root.dark .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color: #0f172a; }
+:root.dark .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: #0f172a; }
+:root.dark .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: #0f172a; }

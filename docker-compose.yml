@@ -33,9 +33,11 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       SNAPSHOT_DIR: /data/snapshot
+      DATASETS_DIR: /data/uploads   # наборы из залитых файлов — общие для всех процессов и реплик api
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
     volumes:
       - ./data/snapshot:/data/snapshot:ro
+      - ./data/uploads:/data/uploads
     # Профиль ресурсов из ТЗ: один контейнер 2 vCPU / 2 ГБ.
     cpus: 2
     mem_limit: 2g
@@ -54,6 +56,7 @@ services:
       DATA_DIR: /data
       MODEL_DIR: /model
       MODEL_MODE: ${MODEL_MODE:-file}
+      MODEL_FILE: ${MODEL_FILE:-}
       MODEL_FALLBACK: ${MODEL_FALLBACK:-baseline}
       PIPELINE_INTERVAL_MIN: ${PIPELINE_INTERVAL_MIN:-60}
       PIPELINE_POLL_SEC: ${PIPELINE_POLL_SEC:-30}

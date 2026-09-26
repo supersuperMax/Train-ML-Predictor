@@ -16,6 +16,7 @@ def forecast_query(
     hour_from: int = Q(0, ge=0, le=23, description="Начальный час интервала"),
     hour_to: int = Q(23, ge=0, le=23, description="Конечный час интервала включительно"),
     granularity: Optional[Granularity] = Q(None, description="Шаг: hour, day, week, month (по умолчанию из горизонта)"),
+    source: str = Q("model", description="Данные: model — прогноз модели, baseline, file:<id> — ключи залитого файла"),
 ) -> Query:
     return Query(horizon=horizon, anchor=date, date_from=date_from, date_to=date_to, route=route, stop_id=stop_id,
-                 hour_from=hour_from, hour_to=hour_to, granularity=granularity)
+                 hour_from=hour_from, hour_to=hour_to, granularity=granularity, source=source)

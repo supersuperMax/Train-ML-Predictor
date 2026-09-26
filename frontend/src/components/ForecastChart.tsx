@@ -2,13 +2,17 @@ import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContaine
 import type { ForecastResponse, Point } from '../types';
 import { num, periodLabel, SOURCE_LABEL } from '../format';
 
-const COLOR = { model: '#1468e8', baseline: '#9aa5b8', mixed: '#6b8fd6', none: '#d0d5de' } as const;
+const COLOR = { model: '#2563eb', baseline: '#94a3b8', mixed: '#60a5fa', none: '#e2e8f0' } as const;
+const COLOR_DARK = { model: '#3b82f6', baseline: '#475569', mixed: '#60a5fa', none: '#1e293b' } as const;
 
 interface Props {
   data: ForecastResponse;
+  dark?: boolean;
 }
 
-export default function ForecastChart({ data }: Props) {
+export default function ForecastChart({ data, dark = false }: Props) {
+  const colors = dark ? COLOR_DARK : COLOR;
+  const tick = { fontSize: 12, fill: dark ? '#94a3b8' : '#64748b' };
   const g = data.query.granularity;
   const multiDay = data.query.from !== data.query.to;
   const rows = data.points.map((p: Point) => ({
@@ -19,6 +23,8 @@ export default function ForecastChart({ data }: Props) {
 
   const tooltip = (
     <Tooltip
+      contentStyle={dark ? { background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0' } : undefined}
+      cursor={{ fill: dark ? '#1e293b' : '#f1f5f9' }}
       formatter={(v) => [num(Number(v)), 'Посадки']}
       labelFormatter={(_, payload) => {
         const p = payload?.[0]?.payload as (Point & { full: string }) | undefined;
@@ -28,19 +34,19 @@ export default function ForecastChart({ data }: Props) {
   );
   const axes = (
     <>
-      <CartesianGrid strokeDasharray="3 3" stroke="#e4e8f0" />
-      <XAxis dataKey="label" tick={{ fontSize: 12 }} interval="preserveStartEnd" minTickGap={8} />
-      <YAxis tickFormatter={(v: number) => num(v)} tick={{ fontSize: 12 }} width={70} />
+      <CartesianGrid strokeDasharray="3 3" stroke={dark ? '#334155' : '#e2e8f0'} />
+      <XAxis dataKey="label" tick={tick} interval="preserveStartEnd" minTickGap={8} />
+      <YAxis tickFormatter={(v: number) => num(v)} tick={tick} width={70} />
     </>
   );
 
   return (
-    <ResponsiveContainer width="100%" height={340}>
+    <ResponsiveContainer width="100%" height={400}>
       {g === 'hour' ? (
         <LineChart data={rows} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
           {axes}
           {tooltip}
-          <Line type="monotone" dataKey="value" stroke={COLOR.model} strokeWidth={2.5} dot={rows.length <= 48} isAnimationActive={false} />
+          <Line type="monotone" dataKey="value" stroke={colors.model} strokeWidth={2.5} dot={rows.length <= 48} isAnimationActive={false} />
         </LineChart>
       ) : (
         <BarChart data={rows} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
@@ -48,7 +54,7 @@ export default function ForecastChart({ data }: Props) {
           {tooltip}
           <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
             {rows.map((r) => (
-              <Cell key={r.t} fill={COLOR[r.source]} />
+              <Cell key={r.t} fill={colors[r.source]} />
             ))}
           </Bar>
         </BarChart>

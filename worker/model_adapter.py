@@ -1,7 +1,7 @@
 """Адаптер модели прогноза. Сервис не зависит от устройства модели — только от контракта (см. model/README.md).
 
 Режимы (MODEL_MODE):
-- file     — готовый файл model/predictions.{parquet,csv}: колонки route, date, hour, prediction;
+- file     — готовый файл прогноза (MODEL_FILE или первый из FILE_CANDIDATES): колонки route, date, hour, prediction;
 - plugin   — model/predictor.py с функцией predict(keys, features, history) -> массив прогнозов;
 - baseline — встроенный профильный прогноз (не ML): средний профиль маршрута по типу дня и часу
              за последние 5 недель истории × сезонный индекс месяца. Нужен, пока нет модели,
@@ -9,6 +9,7 @@
 """
 import importlib.util
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +21,8 @@ log = logging.getLogger(__name__)
 
 KEY_COLUMNS = ["route", "date", "hour"]
 OUTPUT_COLUMNS = KEY_COLUMNS + ["prediction"]
+# Где искать файл прогноза в режиме file (относительно MODEL_DIR), если MODEL_FILE не задан.
+FILE_CANDIDATES = ["predictions.parquet", "predictions.csv", "tram_model/artifacts/forecast.csv"]
 
 
 class ModelError(Exception):
@@ -66,17 +69,50 @@ def validate(df: pd.DataFrame, source: str) -> pd.DataFrame:
     return out
 
 
+def shift_years(pred: pd.DataFrame, years: int) -> pd.DataFrame:
+    """Переносит прогноз на N лет вперёд с учётом календаря, а не простым сдвигом дат (он съехал бы на день недели).
+
+    Для каждой целевой даты берётся день исходного прогноза того же типа (будни с тем же днём недели / сб / вс /
+    праздник), ближайший к дате «минус N лет»: праздник → праздник, обычный понедельник → обычный понедельник.
+    """
+    if not years:
+        return pred
+    src = pd.DatetimeIndex(sorted(pred["date"].unique()))
+    targets = pd.date_range(src.min() + pd.DateOffset(years=years), src.max() + pd.DateOffset(years=years))
+    sc, tc = features.calendar(src), features.calendar(targets)
+
+    def key(c: pd.DataFrame) -> np.ndarray:
+        return np.where(c["daytype"] == "weekday", "wd" + c["dow"].astype(str), c["daytype"]).astype(str)
+
+    s_dates, s_key, s_type = sc["date"].values, key(sc), sc["daytype"].values
+    pairs = []
+    for t, k, dt in zip(tc["date"], key(tc), tc["daytype"]):
+        cand = s_dates[s_key == k]
+        if not len(cand):
+            cand = s_dates[s_type == dt]
+        if not len(cand):
+            cand = s_dates
+        anchor = np.datetime64(t - pd.DateOffset(years=years))
+        pairs.append((t, cand[np.argmin(np.abs(cand - anchor))]))
+    mapping = pd.DataFrame(pairs, columns=["target", "date"])
+    out = mapping.merge(pred, on="date").drop(columns="date").rename(columns={"target": "date"})
+    return out[pred.columns].sort_values(KEY_COLUMNS).reset_index(drop=True)
+
+
 class FileModel:
     mode = "file"
 
-    def __init__(self, model_dir: Path):
-        candidates = [model_dir / "predictions.parquet", model_dir / "predictions.csv"]
+    def __init__(self, model_dir: Path, shift: int = 0):
+        self.shift = shift
+        explicit = os.environ.get("MODEL_FILE", "").strip()
+        candidates = [model_dir / explicit] if explicit else [model_dir / name for name in FILE_CANDIDATES]
         self.path = next((p for p in candidates if p.exists()), None)
         if self.path is None:
-            raise ModelError(f"MODEL_MODE=file: не найден {candidates[0].name} или {candidates[1].name} в {model_dir}")
+            names = ", ".join(str(p.relative_to(model_dir)) for p in candidates)
+            raise ModelError(f"MODEL_MODE=file: не найден файл прогноза ({names}) в {model_dir}")
 
     def describe(self) -> str:
-        return f"файл {self.path.name}"
+        return f"файл {self.path.name}" + (f", даты сдвинуты на +{self.shift} г." if self.shift else "")
 
     def predict(self, keys: pd.DataFrame | None, feats, history) -> pd.DataFrame:
         if self.path.suffix == ".parquet":
@@ -85,7 +121,7 @@ class FileModel:
             with open(self.path, encoding="utf-8-sig") as f:
                 sep = ";" if ";" in f.readline() else ","
             df = pd.read_csv(self.path, sep=sep, encoding="utf-8-sig")
-        out = validate(df, self.path.name)
+        out = shift_years(validate(df, self.path.name), self.shift)
         if keys is not None:  # ограничиваем запрошенным диапазоном дат
             out = out[out["date"].between(keys["date"].min(), keys["date"].max())]
         return out
@@ -153,9 +189,9 @@ class BaselineModel:
         return validate(keys.assign(prediction=values.values), "baseline")
 
 
-def load(mode: str, model_dir: Path):
+def load(mode: str, model_dir: Path, shift_years: int = 0):
     if mode == "file":
-        return FileModel(model_dir)
+        return FileModel(model_dir, shift_years)
     if mode == "plugin":
         return PluginModel(model_dir)
     if mode == "baseline":

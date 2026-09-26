@@ -17,7 +17,24 @@ export interface Meta {
   weather?: string;
   stop_forecast_method?: string;
   last_run?: { started_at: string; finished_at: string; status: string; error?: string; version?: string } | null;
+  has_baseline?: boolean;
+  limits?: { csv_bytes: number; xlsx_bytes: number };
 }
+
+/** Набор данных из залитого файла: ключи route/date/hour, значения — прогноз модели. */
+export interface Dataset {
+  id: string;
+  name: string;
+  rows: number;
+  ok: number;
+  errors: number;
+  range: [string, string] | null;
+  routes: number[];
+  source: string;
+  result_url: string;
+  created_at: string;
+}
+
 
 export interface RouteInfo {
   route: number;

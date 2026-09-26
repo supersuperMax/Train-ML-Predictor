@@ -2,6 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Query
 
+from app.api import predict
 from app.errors import not_found
 from app.services import forecast_service as fs
 from app.services.snapshot import store
@@ -38,8 +39,9 @@ def map_state(
     date: Optional[str] = Query(None, description="Дата, ГГГГ-ММ-ДД"),
     hour: Optional[int] = Query(None, description="Час 0–23; без него — сумма за день"),
     route: Optional[int] = Query(None, description="Только один маршрут"),
+    source: str = Query("model", description="model | baseline | file:<id>"),
 ):
-    return fs.map_state(date, hour, route)
+    return fs.map_state(date, hour, route, source)
 
 
 @router.get("/meta", summary="Версия прогноза, доступный период, факторы модели, статус пайплайна")
@@ -65,5 +67,7 @@ def meta():
         "weather": m.get("weather"),
         "stop_forecast_method": m.get("stop_forecast_method"),
         "horizons": {"day": "по часам", "month": "по дням", "year": "по месяцам"},
+        "has_baseline": s.baseline_cube is not None,
+        "limits": {"csv_bytes": predict.MAX_BYTES, "xlsx_bytes": predict.MAX_XLSX_BYTES},
         "last_run": last_run,
     }

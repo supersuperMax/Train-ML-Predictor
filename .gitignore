@@ -19,4 +19,7 @@ data/snapshot/*
 !data/store/.gitkeep
 !data/snapshot/.gitkeep
 data/incoming/*
+data/uploads/
 !data/incoming/.gitkeep
+
+loadtest/results/

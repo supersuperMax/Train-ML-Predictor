@@ -30,7 +30,7 @@ def forecast_range(cfg: Config, history: pd.DataFrame) -> tuple[pd.Timestamp, pd
 
 def run(cfg: Config) -> dict:
     history = load_history(cfg)
-    model = model_adapter.load(cfg.model_mode, cfg.model_dir)
+    model = model_adapter.load(cfg.model_mode, cfg.model_dir, cfg.model_shift_years)
 
     if model.mode == "file":
         # Диапазон задаёт сам файл; FORECAST_START/END, если заданы, его обрезают.
@@ -41,8 +41,11 @@ def run(cfg: Config) -> dict:
         pred = model.predict(keys, None, history)
         if pred.empty:
             raise model_adapter.ModelError("Файл прогноза не содержит дат в заданном диапазоне")
-        start = pred["date"].min()
-        end = forecast_range(cfg, history)[1] if cfg.model_fallback == "baseline" else pred["date"].max()
+        start, end = pred["date"].min(), pred["date"].max()
+        if cfg.model_fallback == "baseline" and len(history):
+            # baseline заполняет и промежуток между концом истории и началом модели, и хвост до FORECAST_END
+            f_start, f_end = forecast_range(cfg, history)
+            start, end = min(start, f_start), max(end, f_end)
     else:
         start, end = forecast_range(cfg, history)
         keys = model_adapter.grid(cfg.routes, start, end)
@@ -66,6 +69,14 @@ def run(cfg: Config) -> dict:
     pred["source"] = pred["source"].astype("category")
     cfg.store_dir.mkdir(parents=True, exist_ok=True)
     pred.to_parquet(cfg.store_dir / "forecast.parquet", index=False)
+
+    # Полный baseline на тот же период и маршруты — отдельный режим отображения на сайте (сравнение с моделью).
+    baseline_path = cfg.store_dir / "baseline.parquet"
+    if len(history):
+        keys_all = model_adapter.grid(sorted(pred["route"].unique().tolist()), pred["date"].min(), pred["date"].max())
+        model_adapter.BaselineModel().predict(keys_all, features.for_keys(keys_all), history).to_parquet(baseline_path, index=False)
+    elif baseline_path.exists():
+        baseline_path.unlink()
 
     ranges = {src: [str(g["date"].min().date()), str(g["date"].max().date())] for src, g in pred.groupby("source", observed=True)}
     return {"model": model.describe(), "mode": model.mode, "rows": len(pred), "routes": sorted(pred["route"].unique().tolist()),

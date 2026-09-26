@@ -2,11 +2,21 @@
 
 Сервис не зависит от устройства модели. Worker подключает её через адаптер (`worker/model_adapter.py`) в одном из режимов. Режим выбирается переменной `MODEL_MODE`.
 
-Сейчас здесь лежит `predictions.csv` — заглушка (`submission.csv` исследовательской модели, ноябрь–декабрь 2025). Её нужно заменить результатом модели другой команды.
+## Текущая модель — `tram_model/`
+
+Модель команды лежит в [tram_model/](tram_model/README.md): профиль + LightGBM + CatBoost, прогноз на ноябрь–декабрь 2025. Сервис читает её готовый прогноз `tram_model/artifacts/forecast.csv` в режиме `file` и **не пересобирает модель**: lightgbm и catboost в worker не нужны. Даты после 31.12.2025 достраивает baseline (`MODEL_FALLBACK=baseline`).
+
+Пересборка — только у команды и вне сервиса:
+
+```bash
+cd model/tram_model && pip install -r requirements.txt && python -m tram.forecast
+```
+
+Новый `forecast.csv` worker подхватит сам (он следит за папкой `model/`).
 
 ## Режим `file` (по умолчанию)
 
-Положите в эту папку `predictions.parquet` или `predictions.csv`. У CSV разделитель `;` или `,`, кодировка UTF-8.
+Файл прогноза ищется в `MODEL_DIR` по порядку: `predictions.parquet`, `predictions.csv`, `tram_model/artifacts/forecast.csv`. Другой путь задаётся переменной `MODEL_FILE` (относительно `MODEL_DIR`). У CSV разделитель `;` или `,`, кодировка UTF-8.
 
 | Колонка | Тип | Значения |
 |---|---|---|
