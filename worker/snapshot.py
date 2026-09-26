@@ -48,6 +48,9 @@ def run(cfg: Config, details: dict | None = None) -> dict:
     features.calendar(forecast["date"]).to_parquet(tmp / "calendar.parquet", index=False)
     route_stops.to_parquet(tmp / "route_stops.parquet", index=False)
     routes.to_parquet(tmp / "routes.parquet", index=False)
+    has_baseline = (cfg.store_dir / "baseline.parquet").exists()
+    if has_baseline:
+        shutil.copy(cfg.store_dir / "baseline.parquet", tmp / "baseline.parquet")
 
     sources = {str(src): [str(g["date"].min().date()), str(g["date"].max().date())]
                for src, g in forecast.groupby("source", observed=True)}
@@ -62,6 +65,8 @@ def run(cfg: Config, details: dict | None = None) -> dict:
         "model": (details or {}).get("inference", {}).get("model"),
         "model_mode": cfg.model_mode,
         "model_fallback": cfg.model_fallback,
+        "model_shift_years": cfg.model_shift_years,
+        "has_baseline": has_baseline,
         "factors": features.FACTORS,
         "weather": "не учитывается — нет данных о погоде",
         "stop_forecast_method": "прогноз маршрута × доля остановки (посадки убывают к конечной, направления поровну)",

@@ -77,3 +77,36 @@ def test_file_mode_uses_file_range(cfg):
     assert pipeline.run(cfg)["status"] == "ok"
     manifest = json.loads((cfg.snapshot_dir / snapshot.current_version(cfg) / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["range"] == ["2025-12-01", "2025-12-10"]
+
+
+def test_file_mode_finds_tram_model_forecast(cfg):
+    target = cfg.model_dir / "tram_model" / "artifacts"
+    target.mkdir(parents=True)
+    (cfg.model_dir / "predictions.csv").rename(target / "forecast.csv")
+    run = pipeline.run(cfg)
+    assert run["status"] == "ok", run.get("error")
+    assert run["details"]["inference"]["model"] == "файл forecast.csv"
+
+
+def test_shift_years_keeps_calendar():
+    from worker.model_adapter import shift_years
+    idx = pd.MultiIndex.from_product([[17], pd.date_range("2025-11-01", "2025-12-31"), range(24)], names=["route", "date", "hour"])
+    pred = idx.to_frame(index=False)
+    pred["prediction"] = pred["date"].dt.strftime("%m%d").astype(int).astype("float32")  # значение = исходная дата MMDD
+    out = shift_years(pred, 1)
+    assert out["date"].min() == pd.Timestamp("2026-11-01") and out["date"].max() == pd.Timestamp("2026-12-31")
+    assert len(out) == 61 * 24
+    day = out.groupby("date")["prediction"].first()
+    assert day[pd.Timestamp("2026-11-04")] == 1104      # праздник → праздник
+    assert day[pd.Timestamp("2026-12-31")] == 1231      # 31 декабря → 31 декабря
+    assert day[pd.Timestamp("2026-11-02")] == 1110      # обычный понедельник → обычный понедельник 10.11.2025, не праздник 03.11
+
+
+def test_baseline_saved_for_display(cfg):
+    cfg = replace(cfg, model_fallback="baseline", forecast_end="2025-12-31")
+    assert pipeline.run(cfg)["status"] == "ok"
+    v = snapshot.current_version(cfg)
+    manifest = json.loads((cfg.snapshot_dir / v / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["has_baseline"] is True
+    base = pd.read_parquet(cfg.snapshot_dir / v / "baseline.parquet")
+    assert base["date"].min() == pd.Timestamp("2025-11-01") and len(base) == 2 * 61 * 24

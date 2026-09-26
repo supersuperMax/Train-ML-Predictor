@@ -4,6 +4,7 @@ import type { MapState, StopsResponse } from '../types';
 import { dateRu, pad2, SOURCE_LABEL } from '../format';
 import MapView from './MapView';
 import { ErrorBox } from './Status';
+import { PauseIcon, PlayIcon } from './icons';
 import { alertInfo, btn, btnActive, card, cardHead, cardTitle, muted } from '../ui';
 
 interface Props {
@@ -11,6 +12,8 @@ interface Props {
   route: number | null;
   routeHasStops: boolean;
   selectedStop: number | null;
+  dark: boolean;
+  source: string;
   available?: { from: string; to: string };
   onSelectStop: (stopId: number, routes: number[]) => void;
   onDateChange: (date: string) => void;
@@ -21,14 +24,14 @@ const today = () => {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 
-export default function MapPanel({ date, route, routeHasStops, selectedStop, available, onSelectStop, onDateChange }: Props) {
+export default function MapPanel({ date, route, routeHasStops, selectedStop, dark, source, available, onSelectStop, onDateChange }: Props) {
   const [hour, setHour] = useState<number>(8);
   const [playing, setPlaying] = useState(false);
   const [live, setLive] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   const stops = useApi<StopsResponse>('/stops', { route: routeHasStops ? route : null });
-  const state = useApi<MapState>('/map', { date, hour, route: routeHasStops ? route : null });
+  const state = useApi<MapState>('/map', { date, hour, route: routeHasStops ? route : null, source: source === 'model' ? null : source });
 
   // Анимация по часам суток.
   useEffect(() => {
@@ -72,17 +75,17 @@ export default function MapPanel({ date, route, routeHasStops, selectedStop, ava
       )}
       {stops.error && <ErrorBox error={stops.error} />}
       {state.error && <ErrorBox error={state.error} />}
-      <MapView stops={stops.data} state={state.data} selectedStop={selectedStop} onSelectStop={onSelectStop} />
+      <MapView dark={dark} stops={stops.data} state={state.data} selectedStop={selectedStop} onSelectStop={onSelectStop} />
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
-          className={btn}
+          className={`${btn} min-w-48 justify-center`}
           onClick={() => {
             setLive(false);
             setPlaying((p) => !p);
           }}
           aria-label={playing ? 'Пауза' : 'Воспроизвести по часам'}
         >
-          {playing ? '❚❚ Пауза' : '▶ Динамика за сутки'}
+          {playing ? <><PauseIcon className="size-4" /> Пауза</> : <><PlayIcon className="size-4" /> Динамика за сутки</>}
         </button>
         <input
           type="range"
@@ -97,13 +100,14 @@ export default function MapPanel({ date, route, routeHasStops, selectedStop, ava
           }}
           aria-label="Час суток"
         />
-        <span className="min-w-12 text-sm font-semibold tabular-nums text-slate-900">{pad2(hour)}:00</span>
+        <span className="min-w-12 text-sm font-semibold tabular-nums text-slate-900 dark:text-white">{pad2(hour)}:00</span>
         <button className={live ? btnActive : btn} onClick={() => (live ? setLive(false) : goLive())}>
-          {live ? '● Сейчас' : 'Сейчас'}
+          {live && <span className="size-2 rounded-full bg-current" />}
+          Сейчас
         </button>
       </div>
-      {note && live && <p className="mt-3 text-xs text-slate-500">{note}</p>}
-      <p className="mt-3 text-xs text-slate-500">
+      {note && live && <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">{note}</p>}
+      <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
         Остановочный прогноз — доля прогноза маршрута: посадки убывают к конечной, направления делят поток поровну. Координаты есть в справочнике только для части маршрутов. Нажмите на остановку, чтобы построить её график.
       </p>
     </section>

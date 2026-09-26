@@ -18,6 +18,7 @@ class Config:
     model_dir: Path
     model_mode: str            # file | plugin | baseline
     model_fallback: str        # none | baseline — чем достраивать горизонт за пределами модели
+    model_shift_years: int     # сдвиг дат файла модели на N лет (с учётом календаря), режим file
     forecast_start: str        # пусто = день после конца истории
     forecast_end: str          # пусто = 31 декабря следующего года
     routes: tuple[int, ...]
@@ -58,6 +59,8 @@ def load() -> Config:
         model_dir=_path("MODEL_DIR", ROOT / "model"),
         model_mode=os.environ.get("MODEL_MODE", "file").strip().lower(),
         model_fallback=os.environ.get("MODEL_FALLBACK", "baseline").strip().lower(),
+        # tram_model прогнозирует ноябрь–декабрь 2025 (даты хакатона) — сервис показывает этот прогноз на 2026 год
+        model_shift_years=int(os.environ.get("MODEL_SHIFT_YEARS", 1)),
         forecast_start=os.environ.get("FORECAST_START", "").strip(),
         forecast_end=os.environ.get("FORECAST_END", "").strip(),
         routes=tuple(int(r) for r in os.environ.get("FORECAST_ROUTES", DEFAULT_ROUTES).split(",") if r.strip()),

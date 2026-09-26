@@ -9,6 +9,8 @@ from fastapi.responses import ORJSONResponse, Response
 from app import errors
 from app.api.export import router as export_router
 from app.api.forecast import router as forecast_router
+from app.api.predict import router as predict_router
+from app.api.datasets import router as datasets_router
 from app.api.routes import router as routes_router
 from app.services.snapshot import store
 
@@ -17,13 +19,30 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 app = FastAPI(title="Tram Passenger Flow Forecast API", version="0.2.0",
               default_response_class=ORJSONResponse, docs_url="/api/docs", openapi_url="/api/openapi.json")
 # За nginx-прокси фронт и API на одном origin; CORS нужен только для локальной разработки.
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["*"])
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST"], allow_headers=["*"])
+
+
+class SelectiveGZip:
+    """GZip для JSON-ответов API; файлы (/api/predict/batch, /api/export) отдаются без сжатия — сжимать гигабайты на лету дорого."""
+
+    def __init__(self, app, skip: tuple[str, ...] = ("/api/predict/batch", "/api/export/", "/api/datasets")):
+        self.app, self.skip = app, skip
+        self.gzip = GZipMiddleware(app, minimum_size=1024)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith(self.skip):
+            return await self.app(scope, receive, send)
+        return await self.gzip(scope, receive, send)
+
+
+app.add_middleware(SelectiveGZip)
 errors.install(app)
 
 app.include_router(forecast_router, prefix="/api")
 app.include_router(routes_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
+app.include_router(predict_router, prefix="/api")
+app.include_router(datasets_router, prefix="/api")
 
 
 @app.middleware("http")

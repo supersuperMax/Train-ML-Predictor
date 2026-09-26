@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { LngLatBounds, Map as MapLibre, NavigationControl, Popup, type GeoJSONSource, type MapLayerMouseEvent, type StyleSpecification } from 'maplibre-gl';
+import { LngLatBounds, Map as MapLibre, NavigationControl, Popup, setWorkerUrl, type GeoJSONSource, type LngLatBoundsLike, type MapLayerMouseEvent, type StyleSpecification } from 'maplibre-gl';
+// MapLibre 6 ищет worker рядом со своим модулем, а после сборки его там нет — без worker'а GeoJSON-слои
+// (маршруты и остановки) не рисуются. Отдаём Vite собрать worker и передаём его адрес явно.
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type { FeatureCollection, Point } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { MapState, StopsResponse } from '../types';
@@ -7,6 +10,10 @@ import { num, pad2 } from '../format';
 
 const ROUTE_COLORS = ['#1468e8', '#e5383b', '#2a9d8f', '#8d5cf6', '#f59e0b', '#0ea5e9', '#db2777', '#65a30d'];
 const MOSCOW: [number, number] = [37.62, 55.75];
+// Вся Москва вместе с Новой Москвой (с небольшим запасом): за эти пределы карту не увести.
+const MOSCOW_BOUNDS: LngLatBoundsLike = [[36.75, 55.10], [38.02, 56.05]];
+
+setWorkerUrl(workerUrl);
 
 const STYLE: StyleSpecification = {
   version: 8,
@@ -25,12 +32,16 @@ interface Props {
   stops: StopsResponse | null;
   state: MapState | null;
   selectedStop: number | null;
+  dark: boolean;
   onSelectStop: (stopId: number, routes: number[]) => void;
 }
 
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
 const empty: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-export default function MapView({ stops, state, selectedStop, onSelectStop }: Props) {
+export default function MapView({ stops, state, selectedStop, dark, onSelectStop }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibre | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -39,7 +50,7 @@ export default function MapView({ stops, state, selectedStop, onSelectStop }: Pr
 
   useEffect(() => {
     if (!container.current) return;
-    const map = new MapLibre({ container: container.current, style: STYLE, center: MOSCOW, zoom: 10.2 });
+    const map = new MapLibre({ container: container.current, style: STYLE, center: MOSCOW, zoom: 10.2, maxBounds: MOSCOW_BOUNDS, minZoom: 8.5 });
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
     mapRef.current = map;
     const popup = new Popup({ closeButton: false, closeOnClick: false, offset: 10 });
@@ -61,7 +72,7 @@ export default function MapView({ stops, state, selectedStop, onSelectStop }: Pr
           'circle-radius': ['interpolate', ['linear'], ['get', 'norm'], 0, 3, 1, 15],
           'circle-color': ['interpolate', ['linear'], ['get', 'norm'], 0, '#2dc26b', 0.5, '#f5b700', 1, '#e5383b'],
           'circle-opacity': 0.85,
-          'circle-stroke-color': ['case', ['get', 'selected'], '#172033', '#ffffff'],
+          'circle-stroke-color': ['case', ['get', 'selected'], ['get', 'selectedStroke'], ['get', 'stroke']],
           'circle-stroke-width': ['case', ['get', 'selected'], 3, 1],
         },
       });
@@ -76,7 +87,11 @@ export default function MapView({ stops, state, selectedStop, onSelectStop }: Pr
         const p = f.properties as { name: string; value: number; routes: string };
         popup
           .setLngLat((f.geometry as Point).coordinates as [number, number])
-          .setHTML(`<b>${p.name}</b><br/>Маршруты: ${JSON.parse(p.routes).join(', ')}<br/>Прогноз: ${num(p.value)} посадок`)
+          .setHTML(
+            `<div class="font-semibold">${escapeHtml(p.name)}</div>` +
+              `<div class="text-slate-500 dark:text-slate-400">Маршруты: ${JSON.parse(p.routes).join(', ')}</div>` +
+              `<div>Прогноз: <b>${num(p.value)}</b> посадок</div>`,
+          )
           .addTo(map);
       });
       map.on('click', 'stops', (e: MapLayerMouseEvent) => {
@@ -129,18 +144,30 @@ export default function MapView({ stops, state, selectedStop, onSelectStop }: Pr
             value,
             norm: Math.min(1, value / max),
             selected: s.stop_id === selectedStop,
+            stroke: dark ? '#0f172a' : '#ffffff',
+            selectedStroke: dark ? '#ffffff' : '#0f172a',
           },
           geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
         };
       }),
     });
-  }, [stops, state, selectedStop, loaded]);
+  }, [stops, state, selectedStop, dark, loaded]);
+
+  // Тёмная подложка без внешних сервисов: инвертируем яркость тайлов OSM и возвращаем оттенки поворотом на 180°.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    const paint = dark
+      ? { 'raster-brightness-min': 0.9, 'raster-brightness-max': 0.08, 'raster-hue-rotate': 180, 'raster-saturation': -0.4, 'raster-contrast': 0.1 }
+      : { 'raster-brightness-min': 0, 'raster-brightness-max': 1, 'raster-hue-rotate': 0, 'raster-saturation': 0, 'raster-contrast': 0 };
+    for (const [k, v] of Object.entries(paint)) map.setPaintProperty('osm', k as Parameters<MapLibre['setPaintProperty']>[1], v);
+  }, [dark, loaded]);
 
   const routes = stops ? [...new Set(stops.lines.map((l) => l.route))].sort((a, b) => a - b) : [];
   return (
     <div className="relative">
-      <div ref={container} className="h-[460px] overflow-hidden rounded-lg" />
-      <div className="absolute bottom-2.5 left-2.5 flex max-w-[calc(100%-20px)] flex-col gap-1.5 rounded-md bg-white/90 px-2.5 py-2 text-xs text-slate-700 shadow-sm ring-1 ring-slate-900/5">
+      <div ref={container} className="h-[600px] overflow-hidden rounded-lg" />
+      <div className="absolute bottom-2.5 left-2.5 flex max-w-[calc(100%-20px)] flex-col gap-1.5 rounded-md bg-white/90 px-2.5 py-2 text-xs text-slate-700 shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-900/90 dark:text-slate-300 dark:ring-white/10">
         <div className="flex items-center gap-1.5">
           <span>0</span>
           <i className="h-2 w-24 rounded-full bg-linear-to-r from-green-500 via-yellow-400 to-red-500" />

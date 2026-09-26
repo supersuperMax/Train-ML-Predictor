@@ -41,5 +41,5 @@ def cfg(tmp_path, monkeypatch):
     shutil.copy(ROOT / "data" / "reference" / "tram_reference.xlsx", data / "reference")
     write_model_file(model)
     base = config.load()
-    return replace(base, data_dir=data, model_dir=model, model_mode="file", model_fallback="none",
+    return replace(base, data_dir=data, model_dir=model, model_mode="file", model_fallback="none", model_shift_years=0,
                    forecast_start="", forecast_end="", routes=ROUTES, database_url="")

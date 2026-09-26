@@ -5,8 +5,14 @@ from functools import lru_cache
 from typing import Literal
 
 import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pyarrow.compute as pc
 
 from app.errors import ApiError, bad_request, not_found, not_ready
+from dataclasses import replace
+
+from app.services import datasets
 from app.services.snapshot import SOURCES, Snapshot, store
 
 Horizon = Literal["day", "month", "year"]
@@ -28,6 +34,7 @@ class Query:
     hour_from: int = 0
     hour_to: int = 23
     granularity: Granularity | None = None
+    source: str = "model"                # model | baseline | file:<id>
 
 
 @dataclass(frozen=True)
@@ -44,6 +51,36 @@ def snapshot() -> Snapshot:
     if snap is None:
         raise not_ready()
     return snap
+
+
+_views: dict[tuple[str, str], Snapshot] = {}
+
+
+def view(source: str | None = "model") -> Snapshot:
+    """Данные для отображения: model — прогноз модели, baseline — полный baseline, file:<id> — прогноз модели
+    только для ключей залитого файла. Все варианты — тот же Snapshot с подменённым кубом."""
+    s = snapshot()
+    src = (source or "model").strip()
+    if src == "model":
+        return s
+    key = (s.version, src)
+    if key in _views:
+        return _views[key]
+    if src == "baseline":
+        if s.baseline_cube is None:
+            raise not_found("Baseline недоступен: пайплайн его не опубликовал.", code="no_baseline")
+        cube = s.baseline_cube
+        src_arr = np.where(np.isnan(cube).all(axis=2), -1, SOURCES.index("baseline")).astype(np.int8)
+    elif src.startswith("file:"):
+        mask = datasets.aligned_mask(src[5:], s.routes, s.start, s.days)
+        cube = np.where(mask, s.cube, np.nan).astype(np.float32)
+        src_arr = np.where(mask.any(axis=2), s.source, -1).astype(np.int8)
+    else:
+        raise bad_request(f"Неизвестный источник данных «{src}». Допустимо: model, baseline, file:<id>.", code="unknown_source")
+    if len(_views) > 32:
+        _views.clear()
+    _views[key] = replace(s, cube=cube, source=src_arr, day_total=np.nan_to_num(cube).sum(axis=2))
+    return _views[key]
 
 
 def _parse_date(value: str, name: str) -> date:
@@ -188,7 +225,7 @@ def _describe(s: Snapshot, q: Query, r: Resolved) -> dict:
 
 @lru_cache(maxsize=4096)
 def _forecast_cached(version: str, q: Query) -> dict:
-    s = snapshot()
+    s = view(q.source)
     r = resolve(s, q)
     w = weights(s, q.route, q.stop_id)
     points = _series(s, q, w, r)
@@ -202,7 +239,7 @@ def forecast(q: Query) -> dict:
 
 @lru_cache(maxsize=4096)
 def _summary_cached(version: str, q: Query) -> dict:
-    s = snapshot()
+    s = view(q.source)
     r = resolve(s, q)
     w = weights(s, q.route, q.stop_id)
     a, b = s.day(r.d0), s.day(r.d1) + 1
@@ -246,7 +283,7 @@ def summary(q: Query) -> dict:
 
 def table(q: Query) -> tuple[list[dict], dict]:
     """Строки для экспорта: ряд по каждому маршруту (и остановке, если выбрана) с тем же шагом, что и /forecast."""
-    s = snapshot()
+    s = view(q.source)
     r = resolve(s, q)
     routes = [q.route] if q.route is not None else s.routes
     rows = []
@@ -271,8 +308,8 @@ def table(q: Query) -> tuple[list[dict], dict]:
 
 
 @lru_cache(maxsize=4096)
-def _map_cached(version: str, day: str | None, hour: int | None, route: int | None) -> dict:
-    s = snapshot()
+def _map_cached(version: str, day: str | None, hour: int | None, route: int | None, source: str) -> dict:
+    s = view(source)
     d = _parse_date(day, "date") if day else s.start
     if not s.start <= d <= s.end:
         raise not_found(f"Нет прогноза на {d}. Доступен прогноз за {_period_text(s)}.", code="out_of_range",
@@ -296,5 +333,92 @@ def _map_cached(version: str, day: str | None, hour: int | None, route: int | No
     }
 
 
-def map_state(day: str | None, hour: int | None, route: int | None) -> dict:
-    return _map_cached(snapshot().version, day, hour, route)
+def map_state(day: str | None, hour: int | None, route: int | None, source: str = "model") -> dict:
+    return _map_cached(snapshot().version, day, hour, route, source)
+
+
+
+PREDICT_ERRORS = ["", "маршрут не число", "маршрут отсутствует в прогнозе", "дата не в формате ГГГГ-ММ-ДД",
+                  "дата вне прогноза", "час не целое число", "час вне диапазона 0–23"]
+
+
+
+def _as_str(a) -> pa.Array:
+    """Колонка ключей → строки Arrow без пробелов по краям; None/NaN → ''."""
+    if isinstance(a, pa.ChunkedArray):
+        a = a.combine_chunks()
+    if not isinstance(a, pa.Array):
+        a = pa.array(["" if v is None or (isinstance(v, float) and np.isnan(v)) else str(v) for v in a], pa.string())
+    if a.type != pa.string():
+        a = pc.cast(a, pa.string())
+    return pc.fill_null(pc.utf8_trim_whitespace(a), "")
+
+
+def _as_int(a: pa.Array) -> tuple[np.ndarray, np.ndarray]:
+    """Целые из строк ('17', '17.0' из Excel). → (значения, признак корректности)."""
+    valid = pc.match_substring_regex(a, r"^[+-]?\d{1,9}(\.0*)?$")
+    clean = pc.if_else(valid, pc.replace_substring_regex(a, r"\.0*$", ""), "0")
+    return pc.cast(clean, pa.int64()).to_numpy(), valid.to_numpy(zero_copy_only=False)
+
+
+def predict_arrays(routes, dates, hours=None, source: str = "model") -> tuple[np.ndarray, pa.Array, pa.Array, int, dict]:
+    """Векторный прогноз для набора ключей (маршрут, дата, час); пустой час — сумма за день.
+
+    Колонки — массивы Arrow или списки. Разбор идёт в pyarrow.compute без объектов Python, поэтому быстро
+    и с малой памятью. Возвращает значения (NaN при ошибке), источник и текст ошибки ('' — без ошибки), число строк без ошибок
+    и индексы ключей (для маски набора данных).
+    """
+    s = view(source)
+    rs, ds = _as_str(routes), _as_str(dates)
+    n = len(rs)
+    err = np.zeros(n, dtype=np.int8)
+
+    def mark(cond, code):
+        err[(err == 0) & cond] = code
+
+    rt, rt_ok = _as_int(rs)
+    mark(~rt_ok, 1)
+    lut = np.full(max(s.routes) + 2, -1, dtype=np.int64)
+    lut[s.routes] = np.arange(len(s.routes))
+    ri = np.where(err == 0, lut[np.clip(rt, -1, len(lut) - 1)], -1)
+    mark(ri < 0, 2)
+
+    ts = pc.strptime(pc.utf8_slice_codeunits(ds, 0, 10), format="%Y-%m-%d", unit="s", error_is_null=True)
+    secs = pc.fill_null(pc.cast(ts, pa.int64()), -(10 ** 12)).to_numpy()
+    mark(secs == -(10 ** 12), 3)
+    di = secs // 86400 - np.datetime64(s.start, "D").astype(np.int64)
+    mark((di < 0) | (di >= s.days), 4)
+
+    if hours is None:
+        no_hour = np.ones(n, dtype=bool)
+        hr = np.zeros(n, dtype=np.int64)
+    else:
+        hs = _as_str(hours)
+        no_hour = pc.equal(hs, "").to_numpy(zero_copy_only=False)
+        hr, hr_ok = _as_int(hs)
+        mark(~no_hour & ~hr_ok, 5)
+        mark(~no_hour & ((hr < 0) | (hr > 23)), 6)
+
+    ok = err == 0
+    values = np.full(n, np.nan)
+    r_ok, d_ok = ri[ok], di[ok]
+    v = s.day_total[r_ok, d_ok].astype(float)
+    by_hour = ~no_hour[ok]
+    if by_hour.any():
+        v[by_hour] = np.nan_to_num(s.cube[r_ok[by_hour], d_ok[by_hour], hr[ok][by_hour]])
+    values[ok] = v
+
+    src = np.full(n, len(SOURCES) + 1, dtype=np.int8)              # '' для строк с ошибкой
+    codes = s.source[r_ok, d_ok]
+    src[ok] = np.where(codes >= 0, codes, len(SOURCES))              # 'none' — нет прогноза
+    sources = pa.DictionaryArray.from_arrays(pa.array(src), pa.array(SOURCES + ["none", ""])).dictionary_decode()
+    messages = list(PREDICT_ERRORS)
+    messages[4] = f"дата вне прогноза ({_period_text(s)})"
+    errors = pa.DictionaryArray.from_arrays(pa.array(err), pa.array(messages)).dictionary_decode()
+    keys = {"ok": ok, "route": ri, "day": di, "hour": hr, "no_hour": no_hour}
+    return values, sources, errors, int(ok.sum()), keys
+
+def predict_keys(routes, dates, hours, source: str = "model") -> tuple[np.ndarray, list[str], list[str]]:
+    """То же, что predict_arrays, для небольших списков (одно значение в GET /api/predict)."""
+    values, sources, errors, _, _ = predict_arrays(routes, dates, hours, source)
+    return values, sources.to_pylist(), errors.to_pylist()

@@ -39,6 +39,8 @@ class Snapshot:
     stop_idx: dict[int, int]
     share: np.ndarray           # [R, S] float32
     lines: list[dict] = field(default_factory=list)
+    day_total: np.ndarray | None = None  # [R, D] сумма за день, для прогона ключей без часа
+    baseline_cube: np.ndarray | None = None  # [R, D, 24] полный baseline — источник отображения «baseline»
 
     @property
     def end(self) -> date:
@@ -49,6 +51,20 @@ class Snapshot:
 
     def date_at(self, i: int) -> date:
         return self.start + timedelta(days=int(i))
+
+
+def _baseline(folder: Path, route_idx: dict[int, int], start: date, days: int) -> np.ndarray | None:
+    path = folder / "baseline.parquet"
+    if not path.exists():
+        return None
+    b = pd.read_parquet(path)
+    b["date"] = pd.to_datetime(b["date"]).dt.date
+    di = np.array([(d - start).days for d in b["date"]])
+    ri = b["route"].map(route_idx)
+    keep = ri.notna().to_numpy() & (di >= 0) & (di < days)
+    cube = np.full((len(route_idx), days, 24), np.nan, dtype=np.float32)
+    cube[ri[keep].astype(int).to_numpy(), di[keep], b["hour"].to_numpy()[keep].astype(int)] = b["prediction"].to_numpy(np.float32)[keep]
+    return cube
 
 
 def load(folder: Path) -> Snapshot:
@@ -98,7 +114,8 @@ def load(folder: Path) -> Snapshot:
 
     return Snapshot(version=manifest["version"], manifest=manifest, start=start, days=days, routes=routes,
                     route_idx=route_idx, route_names=route_names, cube=cube, source=source, daytype=daytype,
-                    stops=stops, stop_idx=stop_idx, share=share, lines=lines)
+                    stops=stops, stop_idx=stop_idx, share=share, lines=lines,
+                    day_total=np.nan_to_num(cube).sum(axis=2), baseline_cube=_baseline(folder, route_idx, start, days))
 
 
 class SnapshotStore:

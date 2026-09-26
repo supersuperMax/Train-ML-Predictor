@@ -1,2 +1,18 @@
 @import "tailwindcss" source("."); /* сканируем только src/ — одинаково локально и в Docker */
 @source "../index.html";
+
+/* Тёмная тема — по классу dark на <html> (ставится в index.html до загрузки бандла и хуком useTheme) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Попапы MapLibre: у них свой белый фон, а текст наследовался от body и в тёмной теме становился белым.
+   Специфичность повышена через :root — CSS MapLibre грузится позже, в чанке карты. */
+:root .maplibregl-popup-content { color: #0f172a; font-size: 13px; line-height: 1.4; }
+:root.dark .maplibregl-popup-content { background: #0f172a; color: #e2e8f0; box-shadow: 0 0 0 1px #334155, 0 4px 12px rgb(0 0 0 / 0.5); }
+:root.dark .maplibregl-popup-anchor-top .maplibregl-popup-tip,
+:root.dark .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+:root.dark .maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color: #0f172a; }
+:root.dark .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+:root.dark .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+:root.dark .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color: #0f172a; }
+:root.dark .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: #0f172a; }
+:root.dark .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: #0f172a; }

@@ -41,8 +41,8 @@ export default function FiltersPanel({ filters, onChange, routes, stops, availab
               role="radio"
               aria-checked={filters.horizon === h.value}
               className={filters.horizon === h.value
-                ? 'relative cursor-pointer bg-blue-600 px-4 py-2 text-sm font-semibold text-white ring-1 ring-inset ring-blue-600 first:rounded-l-md last:rounded-r-md not-first:-ml-px focus:z-10'
-                : 'relative cursor-pointer bg-white px-4 py-2 text-sm font-semibold text-slate-900 ring-1 ring-inset ring-slate-300 first:rounded-l-md last:rounded-r-md not-first:-ml-px hover:bg-slate-50 focus:z-10'}
+                ? 'relative cursor-pointer bg-blue-600 px-4 py-2 text-sm font-semibold text-white ring-1 ring-inset ring-blue-600 first:rounded-l-md last:rounded-r-md not-first:-ml-px focus:z-10 dark:bg-blue-500 dark:ring-blue-500'
+                : 'relative cursor-pointer bg-white px-4 py-2 text-sm font-semibold text-slate-900 ring-1 ring-inset ring-slate-300 first:rounded-l-md last:rounded-r-md not-first:-ml-px hover:bg-slate-50 focus:z-10 dark:bg-slate-800 dark:text-slate-100 dark:ring-slate-700 dark:hover:bg-slate-700'}
               onClick={() => onChange({ horizon: h.value, granularity: null })}
               title={h.hint}
             >
@@ -101,7 +101,7 @@ export default function FiltersPanel({ filters, onChange, routes, stops, availab
 
       <div className="flex min-w-[150px] flex-col gap-2">
         <span className={label}>Часы</span>
-        <div className="flex items-center gap-2 text-slate-400">
+        <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
           <select className={control} value={filters.hourFrom} onChange={(e) => onChange({ hourFrom: Number(e.target.value) })} aria-label="С часа">
             {HOURS.map((h) => (
               <option key={h} value={h} disabled={h > filters.hourTo}>
