@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.env
+
+node_modules/
+dist/
+
+# Данные: история, справочники, прогноз модели
+*.csv
+*.xlsx
+*.parquet
+
+# Генерируется пайплайном
+data/store/*
+data/snapshot/*
+!data/store/.gitkeep
+!data/snapshot/.gitkeep
+data/incoming/*
+!data/incoming/.gitkeep

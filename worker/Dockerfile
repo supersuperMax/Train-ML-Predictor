@@ -3,6 +3,8 @@ WORKDIR /app
 COPY worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY worker ./worker
-COPY data ./data
-COPY model ./model
-CMD ["python", "worker/worker.py"]
+# Данные (data/) и модель (model/) монтируются из репозитория — см. docker-compose.yml.
+ENV DATA_DIR=/data \
+    MODEL_DIR=/model \
+    PYTHONUNBUFFERED=1
+CMD ["python", "-m", "worker", "run"]
