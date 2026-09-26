@@ -4,10 +4,10 @@ import { DAYTYPE_LABEL, dateRu, num, pad2 } from '../format';
 
 function Stat({ label, value, note }: { label: string; value: ReactNode; note: ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5 rounded-xl bg-page px-3.5 py-3">
-      <span className="text-xs text-muted">{label}</span>
-      <b className="text-[22px]">{value}</b>
-      <small className="text-xs text-muted">{note}</small>
+    <div className="rounded-lg bg-slate-50 px-4 py-3">
+      <dt className="text-xs font-medium text-slate-500">{label}</dt>
+      <dd className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{value}</dd>
+      <dd className="text-xs text-slate-500">{note}</dd>
     </div>
   );
 }
@@ -15,8 +15,8 @@ function Stat({ label, value, note }: { label: string; value: ReactNode; note: R
 export default function SummaryCards({ s }: { s: Summary }) {
   const types = (Object.keys(DAYTYPE_LABEL) as (keyof typeof DAYTYPE_LABEL)[]).filter((t) => s.by_daytype[t]);
   return (
-    <div className="mt-4">
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+    <div className="mt-6">
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Всего посадок" value={num(s.total)} note={`${s.days} дн.`} />
         <Stat label="В среднем за день" value={num(s.per_day)} note={`${num(s.per_hour)} в час`} />
         <Stat
@@ -29,22 +29,22 @@ export default function SummaryCards({ s }: { s: Summary }) {
           value={s.peak_hour_of_day ? `${pad2(s.peak_hour_of_day.hour)}:00` : '—'}
           note={s.peak_hour_of_day ? `≈ ${num(s.peak_hour_of_day.avg)} посадок` : ''}
         />
-      </div>
+      </dl>
       {types.length > 1 && (
-        <table className="mt-3.5 w-full text-sm [&_td]:border-b [&_td]:border-line [&_td]:px-2 [&_td]:py-1.5 [&_th]:border-b [&_th]:border-line [&_th]:px-2 [&_th]:py-1.5">
-          <thead className="text-xs font-semibold text-muted">
-            <tr>
-              <th className="text-left">Тип дня</th>
-              <th className="text-right">Дней</th>
-              <th className="text-right">Посадок в день</th>
+        <table className="mt-4 min-w-full divide-y divide-slate-200 text-sm">
+          <thead>
+            <tr className="text-xs font-semibold text-slate-500">
+              <th className="py-2 pr-3 text-left">Тип дня</th>
+              <th className="px-3 py-2 text-right">Дней</th>
+              <th className="py-2 pl-3 text-right">Посадок в день</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100 text-slate-700">
             {types.map((t) => (
               <tr key={t}>
-                <td>{DAYTYPE_LABEL[t]}</td>
-                <td className="text-right">{s.by_daytype[t]!.days}</td>
-                <td className="text-right">{num(s.by_daytype[t]!.per_day)}</td>
+                <td className="py-2 pr-3 font-medium text-slate-900">{DAYTYPE_LABEL[t]}</td>
+                <td className="px-3 py-2 text-right">{s.by_daytype[t]!.days}</td>
+                <td className="py-2 pl-3 text-right">{num(s.by_daytype[t]!.per_day)}</td>
               </tr>
             ))}
           </tbody>

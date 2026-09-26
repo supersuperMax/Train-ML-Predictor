@@ -2,7 +2,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContaine
 import type { ForecastResponse, Point } from '../types';
 import { num, periodLabel, SOURCE_LABEL } from '../format';
 
-const COLOR = { model: '#1468e8', baseline: '#9aa5b8', mixed: '#6b8fd6', none: '#d0d5de' } as const;
+const COLOR = { model: '#2563eb', baseline: '#94a3b8', mixed: '#60a5fa', none: '#e2e8f0' } as const;
 
 interface Props {
   data: ForecastResponse;
@@ -28,7 +28,7 @@ export default function ForecastChart({ data }: Props) {
   );
   const axes = (
     <>
-      <CartesianGrid strokeDasharray="3 3" stroke="#e4e8f0" />
+      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
       <XAxis dataKey="label" tick={{ fontSize: 12 }} interval="preserveStartEnd" minTickGap={8} />
       <YAxis tickFormatter={(v: number) => num(v)} tick={{ fontSize: 12 }} width={70} />
     </>

@@ -7,6 +7,7 @@ import ForecastChart from './components/ForecastChart';
 import SummaryCards from './components/SummaryCards';
 import ExportLinks from './components/ExportLinks';
 import { ErrorBox, Loading } from './components/Status';
+import { alertInfo, alertWarn, card, cardHead, cardTitle, muted } from './ui';
 
 // Карта (MapLibre) — самый тяжёлый модуль, грузим её отдельным чанком.
 const MapPanel = lazy(() => import('./components/MapPanel'));
@@ -42,14 +43,14 @@ export default function App() {
   const routeInfo = routes.data?.find((r) => r.route === filters?.route);
 
   return (
-    <main className="mx-auto max-w-[1400px] px-4 pt-6 pb-12">
-      <header className="mb-5 flex flex-wrap items-end justify-between gap-4">
+    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="mb-1 text-[28px] font-bold">Прогноз пассажиропотока</h1>
-          <p className="text-muted">Трамвайные маршруты Москвы · посадки (успешные валидации) по часам</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Прогноз пассажиропотока</h1>
+          <p className="mt-1 text-sm text-slate-500">Трамвайные маршруты Москвы · посадки (успешные валидации) по часам</p>
         </div>
         {meta.data?.ready && (
-          <div className="text-right text-[13px] leading-normal text-muted">
+          <div className="text-right text-xs leading-5 text-slate-500">
             <div>Прогноз: {dateRu(meta.data.available!.from)} — {dateRu(meta.data.available!.to)}</div>
             <div>Модель: {meta.data.model}</div>
             <div title={meta.data.version}>Обновлён: {new Date(meta.data.created_at!).toLocaleString('ru-RU')}</div>
@@ -60,13 +61,13 @@ export default function App() {
       {meta.error && <ErrorBox error={meta.error} onRetry={() => setRetry((r) => r + 1)} />}
       {meta.loading && !meta.data && <Loading text="Подключение к сервису…" />}
       {meta.data && !meta.data.ready && (
-        <div className="alert alert-info">
+        <div className={alertInfo}>
           Прогноз ещё строится: пайплайн не опубликовал данные. Страница обновится автоматически.
-          {meta.data.last_run?.error && <div className="text-[13px]">Последний прогон завершился ошибкой: {meta.data.last_run.error}</div>}
+          {meta.data.last_run?.error && <div className="text-xs">Последний прогон завершился ошибкой: {meta.data.last_run.error}</div>}
         </div>
       )}
       {meta.data?.last_run?.status === 'error' && meta.data.ready && (
-        <div className="alert alert-warn text-[13px]">
+        <div className={alertWarn}>
           Последний прогон пайплайна завершился ошибкой, показан предыдущий прогноз: {meta.data.last_run.error}
         </div>
       )}
@@ -75,11 +76,11 @@ export default function App() {
         <>
           <FiltersPanel filters={filters} onChange={update} routes={routes.data ?? []} stops={allStops.data?.stops ?? []} available={meta.data.available} />
 
-          <div className="grid items-start gap-5 wide:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-            <section className="card">
-              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
-                <h2 className="text-[17px] font-bold">{HORIZON_TITLE[filters.horizon]}</h2>
-                <span className="text-muted">
+          <div className="grid items-start gap-6 lg:grid-cols-2">
+            <section className={card}>
+              <div className={cardHead}>
+                <h2 className={cardTitle}>{HORIZON_TITLE[filters.horizon]}</h2>
+                <span className={muted}>
                   {filters.route === null ? 'все маршруты' : `маршрут № ${filters.route}`}
                   {forecast.data?.query.stop_name ? ` · ${forecast.data.query.stop_name}` : ''}
                 </span>
@@ -91,11 +92,11 @@ export default function App() {
                   <div className={forecast.loading ? 'opacity-55 transition-opacity' : 'transition-opacity'}>
                     <ForecastChart data={forecast.data} />
                   </div>
-                  <p className="my-3 text-[13px] text-muted">
+                  <p className="mt-3 text-xs text-slate-500">
                     {dateRu(forecast.data.query.from)} — {dateRu(forecast.data.query.to)} · итого {num(forecast.data.total)} посадок
                     {forecast.data.query.truncated && ' · период обрезан до доступного прогноза'}
                     {forecast.data.points.some((p) => p.source !== 'model') && (
-                      <> · <span className="rounded-md bg-[#eef0f4] px-1.5 py-px">серые столбцы — {SOURCE_LABEL.baseline}, за пределами горизонта модели</span></>
+                      <> · <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-600">серые столбцы — {SOURCE_LABEL.baseline}, за пределами горизонта модели</span></>
                     )}
                   </p>
                 </>
@@ -105,7 +106,7 @@ export default function App() {
               <ExportLinks filters={filters} />
             </section>
 
-            <Suspense fallback={<section className="card"><Loading text="Загрузка карты…" /></section>}>
+            <Suspense fallback={<section className={card}><Loading text="Загрузка карты…" /></section>}>
               <MapPanel
                 date={filters.date}
                 route={filters.route}
@@ -120,13 +121,13 @@ export default function App() {
             </Suspense>
           </div>
 
-          <section className="card mt-5">
-            <h2 className="text-[17px] font-bold">Учитываемые факторы</h2>
-            <ul className="mt-2.5 list-disc columns-[2_280px] pl-[18px] [&_li]:mb-1">
+          <section className={`${card} mt-6`}>
+            <h2 className={cardTitle}>Учитываемые факторы</h2>
+            <ul className="mt-3 list-disc columns-[2_280px] space-y-1 pl-5 text-sm text-slate-700 marker:text-slate-400">
               {Object.entries(meta.data.factors ?? {}).map(([k, v]) => (
                 <li key={k}>{v}</li>
               ))}
-              <li className="text-muted">Погода: {meta.data.weather}</li>
+              <li className="text-slate-500">Погода: {meta.data.weather}</li>
             </ul>
           </section>
         </>

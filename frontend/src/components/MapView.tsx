@@ -139,11 +139,11 @@ export default function MapView({ stops, state, selectedStop, onSelectStop }: Pr
   const routes = stops ? [...new Set(stops.lines.map((l) => l.route))].sort((a, b) => a - b) : [];
   return (
     <div className="relative">
-      <div ref={container} className="h-[460px] overflow-hidden rounded-xl" />
-      <div className="absolute bottom-2.5 left-2.5 flex max-w-[calc(100%-20px)] flex-col gap-1.5 rounded-[10px] bg-white/90 px-2.5 py-2 text-xs">
+      <div ref={container} className="h-[460px] overflow-hidden rounded-lg" />
+      <div className="absolute bottom-2.5 left-2.5 flex max-w-[calc(100%-20px)] flex-col gap-1.5 rounded-md bg-white/90 px-2.5 py-2 text-xs text-slate-700 shadow-sm ring-1 ring-slate-900/5">
         <div className="flex items-center gap-1.5">
           <span>0</span>
-          <i className="load-scale h-2 w-[90px] rounded" />
+          <i className="h-2 w-24 rounded-full bg-linear-to-r from-green-500 via-yellow-400 to-red-500" />
           <span>{num(state?.max ?? 0)}</span>
         </div>
         <div className="flex flex-wrap gap-2">

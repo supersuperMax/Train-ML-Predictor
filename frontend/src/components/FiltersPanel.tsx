@@ -1,5 +1,6 @@
 import type { Filters, Granularity, Horizon, RouteInfo, Stop } from '../types';
 import { pad2 } from '../format';
+import { card, control, label } from '../ui';
 
 interface Props {
   filters: Filters;
@@ -30,16 +31,18 @@ export default function FiltersPanel({ filters, onChange, routes, stops, availab
   const routeStops = filters.route === null ? [] : stops.filter((s) => s.routes.includes(filters.route!));
 
   return (
-    <section className="card mb-5 flex flex-wrap items-end gap-x-5 gap-y-4" aria-label="Параметры прогноза">
-      <div className="flex min-w-[150px] flex-col gap-1.5">
-        <span className="field-label">Горизонт</span>
-        <div className="inline-flex overflow-hidden rounded-lg border border-control" role="radiogroup">
+    <section className={`${card} mb-6 flex flex-wrap items-end gap-x-6 gap-y-4`} aria-label="Параметры прогноза">
+      <div className="flex min-w-[150px] flex-col gap-2">
+        <span className={label}>Горизонт</span>
+        <div className="isolate inline-flex rounded-md shadow-sm" role="radiogroup">
           {HORIZONS.map((h) => (
             <button
               key={h.value}
               role="radio"
               aria-checked={filters.horizon === h.value}
-              className={`px-4 py-2 not-first:border-l not-first:border-control ${filters.horizon === h.value ? 'bg-accent text-white' : 'bg-white text-ink'}`}
+              className={filters.horizon === h.value
+                ? 'relative cursor-pointer bg-blue-600 px-4 py-2 text-sm font-semibold text-white ring-1 ring-inset ring-blue-600 first:rounded-l-md last:rounded-r-md not-first:-ml-px focus:z-10'
+                : 'relative cursor-pointer bg-white px-4 py-2 text-sm font-semibold text-slate-900 ring-1 ring-inset ring-slate-300 first:rounded-l-md last:rounded-r-md not-first:-ml-px hover:bg-slate-50 focus:z-10'}
               onClick={() => onChange({ horizon: h.value, granularity: null })}
               title={h.hint}
             >
@@ -49,10 +52,10 @@ export default function FiltersPanel({ filters, onChange, routes, stops, availab
         </div>
       </div>
 
-      <label className="flex min-w-[150px] flex-col gap-1.5">
-        <span className="field-label">Дата начала</span>
+      <label className="flex min-w-[150px] flex-col gap-2">
+        <span className={label}>Дата начала</span>
         <input
-          className="control"
+          className={control}
           type="date"
           value={filters.date}
           min={available?.from}
@@ -61,10 +64,10 @@ export default function FiltersPanel({ filters, onChange, routes, stops, availab
         />
       </label>
 
-      <label className="flex min-w-[150px] flex-col gap-1.5">
-        <span className="field-label">Маршрут</span>
+      <label className="flex min-w-[150px] flex-col gap-2">
+        <span className={label}>Маршрут</span>
         <select
-          className="control"
+          className={control}
           value={filters.route ?? ''}
           onChange={(e) => onChange({ route: e.target.value ? Number(e.target.value) : null, stopId: null })}
         >
@@ -78,10 +81,10 @@ export default function FiltersPanel({ filters, onChange, routes, stops, availab
         </select>
       </label>
 
-      <label className="flex min-w-[150px] flex-col gap-1.5">
-        <span className="field-label">Остановка</span>
+      <label className="flex min-w-[150px] flex-col gap-2">
+        <span className={label}>Остановка</span>
         <select
-          className="control"
+          className={control}
           value={filters.stopId ?? ''}
           disabled={!route?.has_stops}
           onChange={(e) => onChange({ stopId: e.target.value ? Number(e.target.value) : null })}
@@ -96,10 +99,10 @@ export default function FiltersPanel({ filters, onChange, routes, stops, availab
         </select>
       </label>
 
-      <div className="flex min-w-[150px] flex-col gap-1.5">
-        <span className="field-label">Часы</span>
-        <div className="flex items-center gap-1.5">
-          <select className="control" value={filters.hourFrom} onChange={(e) => onChange({ hourFrom: Number(e.target.value) })} aria-label="С часа">
+      <div className="flex min-w-[150px] flex-col gap-2">
+        <span className={label}>Часы</span>
+        <div className="flex items-center gap-2 text-slate-400">
+          <select className={control} value={filters.hourFrom} onChange={(e) => onChange({ hourFrom: Number(e.target.value) })} aria-label="С часа">
             {HOURS.map((h) => (
               <option key={h} value={h} disabled={h > filters.hourTo}>
                 {pad2(h)}:00
@@ -107,7 +110,7 @@ export default function FiltersPanel({ filters, onChange, routes, stops, availab
             ))}
           </select>
           <span>—</span>
-          <select className="control" value={filters.hourTo} onChange={(e) => onChange({ hourTo: Number(e.target.value) })} aria-label="По час">
+          <select className={control} value={filters.hourTo} onChange={(e) => onChange({ hourTo: Number(e.target.value) })} aria-label="По час">
             {HOURS.map((h) => (
               <option key={h} value={h} disabled={h < filters.hourFrom}>
                 {pad2(h)}:59
@@ -117,10 +120,10 @@ export default function FiltersPanel({ filters, onChange, routes, stops, availab
         </div>
       </div>
 
-      <label className="flex min-w-[150px] flex-col gap-1.5">
-        <span className="field-label">Шаг</span>
+      <label className="flex min-w-[150px] flex-col gap-2">
+        <span className={label}>Шаг</span>
         <select
-          className="control"
+          className={control}
           value={filters.granularity ?? ''}
           onChange={(e) => onChange({ granularity: (e.target.value || null) as Granularity | null })}
         >
