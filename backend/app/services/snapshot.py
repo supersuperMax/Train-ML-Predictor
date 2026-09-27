@@ -41,6 +41,7 @@ class Snapshot:
     lines: list[dict] = field(default_factory=list)
     day_total: np.ndarray | None = None  # [R, D] сумма за день, для прогона ключей без часа
     baseline_cube: np.ndarray | None = None  # [R, D, 24] полный baseline — источник отображения «baseline»
+    fact_cube: np.ndarray | None = None  # [R, D, 24] факт из залитого файла валидаций (только в view «file:<id>»)
 
     @property
     def end(self) -> date:
@@ -108,9 +109,15 @@ def load(folder: Path) -> Snapshot:
     for r, s, w in rs.groupby(["route", "stop_id"], as_index=False)["share"].sum().itertuples(index=False):
         share[route_idx[int(r)], stop_idx[int(s)]] += w
 
-    lines = [{"route": int(r), "direction": int(d),
-              "coordinates": g.sort_values("seq")[["lon", "lat"]].round(6).to_numpy().tolist()}
-             for (r, d), g in rs.groupby(["route", "direction"])] if len(rs) else []
+    # линии по рельсам из шага geo; в старых snapshot'ах их нет — тогда прямыми между остановками
+    if (folder / "route_lines.parquet").exists():
+        rl = pd.read_parquet(folder / "route_lines.parquet")
+        lines = [{"route": int(r), "direction": int(d), "coordinates": g.sort_values("i")[["lon", "lat"]].round(6).to_numpy().tolist()}
+                 for (r, d), g in rl[rl["route"].isin(routes)].groupby(["route", "direction"])]
+    else:
+        lines = [{"route": int(r), "direction": int(d),
+                  "coordinates": g.sort_values("seq")[["lon", "lat"]].round(6).to_numpy().tolist()}
+                 for (r, d), g in rs.groupby(["route", "direction"])] if len(rs) else []
 
     return Snapshot(version=manifest["version"], manifest=manifest, start=start, days=days, routes=routes,
                     route_idx=route_idx, route_names=route_names, cube=cube, source=source, daytype=daytype,

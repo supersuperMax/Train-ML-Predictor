@@ -11,7 +11,7 @@ from app.services import forecast_service as fs
 router = APIRouter(tags=["export"])
 
 COLUMNS = {"period": "Период", "route": "Маршрут", "stop_id": "ID остановки", "stop_name": "Остановка",
-           "prediction": "Прогноз посадок", "source": "Источник"}
+           "fact": "Факт посадок", "prediction": "Прогноз посадок", "source": "Источник"}
 
 
 def _frame(q: fs.Query) -> tuple[pd.DataFrame, str]:

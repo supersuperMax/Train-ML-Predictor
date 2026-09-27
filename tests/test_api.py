@@ -183,6 +183,7 @@ def test_dataset_from_file(client):
     src = ds["source"]
     day = client.get("/api/forecast", params={"horizon": "day", "route": 1, "date": "2025-11-03", "source": src}).json()
     assert day["total"] == 15 + 16                       # только часы 5 и 6 из файла
+    assert day["points"][0]["value"] is None             # часа нет в файле — пусто, а не 0
     whole = client.get("/api/forecast", params={"horizon": "day", "route": 17, "date": "2025-11-04", "source": src}).json()
     assert whole["total"] == sum(170 + h for h in range(24))  # строка без часа — весь день
     res = client.get(ds["result_url"])
@@ -190,6 +191,70 @@ def test_dataset_from_file(client):
     assert client.get("/api/datasets/" + ds["id"]).json()["name"] == "keys.csv"
     assert client.get("/api/forecast", params={"source": "file:000000000000"}).status_code == 404
 
+
+RAW_HEADER = ("tran_no;device_no;tran_date_time;begin_date_time;input_date_time;crd_hashcode;validation_result;tran_type_id;"
+              "place_id;good_type;pass_route;ngpt_route;bus_exit_no;garage_number")
+
+
+def raw_row(n, ts, result, route):
+    return f"{n};100{n};{ts};{ts};{ts};h{n};{result};52;10501;СКМ МГТ;;{route};5;31018"
+
+
+def test_dataset_from_raw_validations(client):
+    rows = [raw_row(1, "2025-11-03 05:10:00", 1, "1 трамвай"), raw_row(2, "2025-11-03 05:40:00", 1, "1 трамвай"),
+            raw_row(3, "2025-11-03 06:59:59", 1, "1 трамвай"), raw_row(4, "2025-11-03 06:10:00", 0, "1 трамвай"),
+            raw_row(5, "2025-11-03 06:20:00", 1, "мусор"), raw_row(6, "2025-11-04 08:00:00", 1, "17 трамвай")]
+    body = ("\n".join([RAW_HEADER, *rows]) + "\n").encode()
+    r = client.post("/api/datasets", params={"filename": "validations.csv"}, content=body)
+    assert r.status_code == 200, r.text
+    ds = r.json()
+    assert ds["kind"] == "validations" and ds["rows"] == 6 and ds["skipped"] == 2 and ds["boardings"] == 4
+    assert ds["keys"] == 3 and ds["ok"] == 3 and "warning" not in ds and "note" not in ds
+    assert ds["range"] == ["2025-11-03", "2025-11-04"] and ds["overlap"] == ds["range"] and ds["routes"] == [1, 17]
+
+    day = client.get("/api/forecast", params={"horizon": "day", "route": 1, "date": "2025-11-03", "source": ds["source"]}).json()
+    assert day["total"] == sum(10 + h for h in range(24))            # прогноз модели полный, файлом не обрезается
+    assert day["fact_total"] == 3
+    assert {p["hour"]: p["fact"] for p in day["points"] if p["fact"] is not None} == {5: 2, 6: 1}
+    assert day["compare"] == {"from": "2025-11-03", "to": "2025-11-03", "forecast": 31, "fact": 3,
+                              "error_pct": round((31 - 3) / 3 * 100, 1)}   # сравнение только в часах с фактом
+    month = client.get("/api/forecast", params={"horizon": "month", "date": "2025-11-01", "source": ds["source"]}).json()
+    assert month["fact_total"] == 4
+    assert "fact" not in client.get("/api/forecast", params={"horizon": "day", "date": "2025-11-03"}).json()["points"][0]
+
+    lines = client.get(ds["result_url"]).content.decode("utf-8-sig").splitlines()
+    assert lines[0] == "route;date;hour;fact;prediction;source;error"
+    assert lines[1].split(";")[:4] == ["1", "2025-11-03", "5", "2"] and float(lines[1].split(";")[4]) == 15
+    export = client.get("/api/export/csv", params={"horizon": "day", "route": 1, "date": "2025-11-03", "source": ds["source"]})
+    assert "Факт посадок" in export.content.decode("utf-8-sig").splitlines()[0]
+
+
+def test_raw_validations_before_forecast(client):
+    # октябрь (история, до прогноза) + ночные поездки после полуночи 1 ноября — неполный крайний день
+    rows = [raw_row(n, f"2025-10-{day} {7 + n % 10:02d}:15:00", 1, "1 трамвай") for day in range(27, 32) for n in range(10)]
+    rows.append(raw_row(999, "2025-11-01 00:30:00", 1, "1 трамвай"))
+    body = ("\n".join([RAW_HEADER, *rows]) + "\n").encode()
+    ds = client.post("/api/datasets", params={"filename": "test.csv"}, content=body).json()
+    assert ds["range"] == ["2025-10-27", "2025-10-31"] and ds["trimmed_days"] == ["2025-11-01"]
+    assert ds["overlap"] is None and "не пересекаются" in ds["note"]
+
+    src = ds["source"]
+    month = client.get("/api/forecast", params={"horizon": "month", "route": 1, "date": "2025-10-27", "source": src}).json()
+    pts = {p["t"]: p for p in month["points"]}
+    assert pts["2025-10-28"]["fact"] == 10 and pts["2025-10-28"]["value"] is None   # до прогноза — только факт
+    assert pts["2025-11-01"]["value"] == sum(10 + h for h in range(24))            # прогноз модели полный
+    assert pts["2025-11-01"]["fact"] is None                                        # ночь 1 ноября отброшена
+    assert month["fact_total"] == 50 and month["compare"] is None
+    m = client.get("/api/map", params={"date": "2025-10-28", "source": src}).json()
+    assert m["source"] == "fact" and m["max"] > 0
+    summary = client.get("/api/summary", params={"horizon": "month", "route": 1, "date": "2025-10-27", "source": src}).json()
+    assert summary["days"] == 26                                                    # 01.11–26.11: только дни с прогнозом
+
+    only_fails = ("\n".join([RAW_HEADER, raw_row(1, "2025-11-03 08:00:00", 0, "1 трамвай")]) + "\n").encode()
+    r = client.post("/api/datasets", params={"filename": "fails.csv"}, content=only_fails)
+    assert r.status_code == 400 and r.json()["error"]["code"] == "no_boardings"
+    r = client.post("/api/datasets", params={"filename": "x.csv"}, content=b"a;b\n1;2\n")
+    assert r.status_code == 400 and r.json()["error"]["code"] == "missing_columns"
 
 def test_meta_limits(client):
     m = client.get("/api/meta").json()

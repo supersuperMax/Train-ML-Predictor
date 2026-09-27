@@ -56,9 +56,35 @@ def snapshot() -> Snapshot:
 _views: dict[tuple[str, str], Snapshot] = {}
 
 
+def _weekday_type(d: date) -> str:
+    return "sat" if d.weekday() == 5 else "sun" if d.weekday() == 6 else "weekday"
+
+
+def _extend(s: Snapshot, start: date, days: int) -> Snapshot:
+    """Расширяет ось дат snapshot'а (для факта из файла вне периода прогноза): прогноза в новых днях нет (NaN, source −1).
+    Тип дня для них — по дню недели: календарь праздников в snapshot есть только на период прогноза."""
+    if start == s.start and days == s.days:
+        return s
+    off = (s.start - start).days
+
+    def pad(a: np.ndarray | None, fill) -> np.ndarray | None:
+        if a is None:
+            return None
+        out = np.full((a.shape[0], days, *a.shape[2:]), fill, dtype=a.dtype)
+        out[:, off:off + s.days] = a
+        return out
+
+    daytype = np.array([_weekday_type(start + timedelta(days=i)) for i in range(days)], dtype=object)
+    daytype[off:off + s.days] = s.daytype
+    return replace(s, start=start, days=days, cube=pad(s.cube, np.nan), source=pad(s.source, -1), daytype=daytype,
+                   day_total=pad(s.day_total, 0), baseline_cube=pad(s.baseline_cube, np.nan))
+
+
 def view(source: str | None = "model") -> Snapshot:
-    """Данные для отображения: model — прогноз модели, baseline — полный baseline, file:<id> — прогноз модели
-    только для ключей залитого файла. Все варианты — тот же Snapshot с подменённым кубом."""
+    """Данные для отображения: model — прогноз модели, baseline — полный baseline, file:<id> — набор из файла.
+    Набор из файла ключей — прогноз модели только по его ключам; набор из сырых валидаций — полный прогноз модели
+    и факт из файла (fact_cube) на общей оси дат, расширенной на период файла. Все варианты — тот же Snapshot
+    с подменёнными массивами."""
     s = snapshot()
     src = (source or "model").strip()
     if src == "model":
@@ -72,6 +98,16 @@ def view(source: str | None = "model") -> Snapshot:
         cube = s.baseline_cube
         src_arr = np.where(np.isnan(cube).all(axis=2), -1, SOURCES.index("baseline")).astype(np.int8)
     elif src.startswith("file:"):
+        mask, fact, f_routes, f_start = datasets.load(src[5:])
+        if fact is not None:
+            start = min(s.start, f_start)
+            end = max(s.end, f_start + timedelta(days=fact.shape[1] - 1))
+            days = (end - start).days + 1
+            out = replace(_extend(s, start, days), fact_cube=datasets.align(fact, f_routes, f_start, s.routes, start, days, np.nan))
+            if len(_views) > 32:
+                _views.clear()
+            _views[key] = out
+            return out
         mask = datasets.aligned_mask(src[5:], s.routes, s.start, s.days)
         cube = np.where(mask, s.cube, np.nan).astype(np.float32)
         src_arr = np.where(mask.any(axis=2), s.source, -1).astype(np.int8)
@@ -174,40 +210,95 @@ def _source_label(codes: np.ndarray) -> str:
     return present.pop() if len(present) == 1 else "mixed"
 
 
-def _series(s: Snapshot, q: Query, w: np.ndarray, r: Resolved) -> list[dict]:
+@dataclass(frozen=True)
+class Grid:
+    """Свёртка куба по маршрутам запроса: значения [D, H] и признак «есть данные» (NaN в кубе — данных нет)."""
+    a: int
+    values: np.ndarray
+    has_value: np.ndarray
+    fact: np.ndarray | None
+    has_fact: np.ndarray | None
+
+
+def _grid(s: Snapshot, q: Query, w: np.ndarray, r: Resolved) -> Grid:
     a, b = s.day(r.d0), s.day(r.d1) + 1
-    sub = s.cube[:, a:b, q.hour_from:q.hour_to + 1]
-    values = np.tensordot(w, np.nan_to_num(sub), axes=(0, 0))          # [D, H]
-    active = w > 0
-    src = s.source[active, a:b]                                        # [R', D]
+    hours = slice(q.hour_from, q.hour_to + 1)
+    active = (w > 0).astype(np.float32)
+
+    def fold(cube: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        sub = cube[:, a:b, hours]
+        return (np.tensordot(w, np.nan_to_num(sub), axes=(0, 0)),                              # [D, H]
+                np.tensordot(active, (~np.isnan(sub)).astype(np.float32), axes=(0, 0)) > 0)
+
+    values, has_value = fold(s.cube)
+    # факт из залитого файла валидаций сворачивается так же, как прогноз (по маршруту / доле остановки)
+    fact, has_fact = fold(s.fact_cube) if s.fact_cube is not None else (None, None)
+    return Grid(a, values, has_value, fact, has_fact)
+
+
+def _num(v: float, has: bool) -> float | None:
+    """Нет данных — null, а не 0: график рисует разрыв, а не ложный ноль."""
+    return round(float(v), 1) if has else None
+
+
+def _series(s: Snapshot, q: Query, w: np.ndarray, r: Resolved, g: Grid | None = None) -> list[dict]:
+    g = g or _grid(s, q, w, r)
+    a, n = g.a, g.values.shape[0]
+    src = s.source[w > 0, a:a + n]                                     # [R', D]
 
     if r.granularity == "hour":
         points = []
-        for i in range(b - a):
+        for i in range(n):
             d = s.date_at(a + i).isoformat()
             label = _source_label(src[:, i])
             for j, h in enumerate(range(q.hour_from, q.hour_to + 1)):
-                points.append({"t": f"{d}T{h:02d}:00", "date": d, "hour": h,
-                               "value": round(float(values[i, j]), 1), "source": label})
+                p = {"t": f"{d}T{h:02d}:00", "date": d, "hour": h, "value": _num(g.values[i, j], g.has_value[i, j]),
+                     "source": label}
+                if g.fact is not None:
+                    p["fact"] = _num(g.fact[i, j], g.has_fact[i, j])
+                points.append(p)
         return points
 
-    daily = values.sum(axis=1)
-    keys = _bucket_keys(s, r.d0, b - a, r.granularity)
+    daily, day_has = g.values.sum(axis=1), g.has_value.any(axis=1)
+    daily_fact = g.fact.sum(axis=1) if g.fact is not None else None
+    fact_has = g.has_fact.any(axis=1) if g.fact is not None else None
+    keys = _bucket_keys(s, r.d0, n, r.granularity)
     points, order = {}, []
     for i, k in enumerate(keys):
         if k not in points:
-            points[k] = {"t": k, "value": 0.0, "days": 0, "_src": []}
+            points[k] = {"value": 0.0, "has": False, "fact": 0.0, "fact_has": False, "days": 0, "_src": []}
             order.append(k)
         p = points[k]
         p["value"] += float(daily[i])
+        p["has"] |= bool(day_has[i])
+        if daily_fact is not None:
+            p["fact"] += float(daily_fact[i])
+            p["fact_has"] |= bool(fact_has[i])
         p["days"] += 1
         p["_src"].append(src[:, i])
     out = []
     for k in order:
         p = points[k]
-        out.append({"t": k, "value": round(p["value"], 1), "days": p["days"],
-                    "source": _source_label(np.concatenate(p["_src"]) if p["_src"] else np.array([], dtype=np.int8))})
+        point = {"t": k, "value": _num(p["value"], p["has"]), "days": p["days"],
+                 "source": _source_label(np.concatenate(p["_src"]) if p["_src"] else np.array([], dtype=np.int8))}
+        if daily_fact is not None:
+            point["fact"] = _num(p["fact"], p["fact_has"])
+        out.append(point)
     return out
+
+
+def _compare(s: Snapshot, g: Grid) -> dict | None:
+    """Прогноз против факта только в часах, где есть и то и другое."""
+    if g.fact is None:
+        return None
+    both = g.has_value & g.has_fact
+    if not both.any():
+        return None
+    days = np.flatnonzero(both.any(axis=1))
+    forecast, fact = float(g.values[both].sum()), float(g.fact[both].sum())
+    return {"from": s.date_at(g.a + days[0]).isoformat(), "to": s.date_at(g.a + days[-1]).isoformat(),
+            "forecast": round(forecast, 1), "fact": round(fact, 1),
+            "error_pct": round((forecast - fact) / fact * 100, 1) if fact > 0 else None}
 
 
 def _describe(s: Snapshot, q: Query, r: Resolved) -> dict:
@@ -228,9 +319,14 @@ def _forecast_cached(version: str, q: Query) -> dict:
     s = view(q.source)
     r = resolve(s, q)
     w = weights(s, q.route, q.stop_id)
-    points = _series(s, q, w, r)
-    return {"query": _describe(s, q, r), "unit": "посадки", "total": round(sum(p["value"] for p in points), 1),
-            "points": points}
+    g = _grid(s, q, w, r)
+    points = _series(s, q, w, r, g)
+    out = {"query": _describe(s, q, r), "unit": "посадки",
+           "total": round(sum(p["value"] for p in points if p["value"] is not None), 1), "points": points}
+    if s.fact_cube is not None:
+        out["fact_total"] = round(sum(p["fact"] for p in points if p["fact"] is not None), 1)
+        out["compare"] = _compare(s, g)
+    return out
 
 
 def forecast(q: Query) -> dict:
@@ -243,17 +339,19 @@ def _summary_cached(version: str, q: Query) -> dict:
     r = resolve(s, q)
     w = weights(s, q.route, q.stop_id)
     a, b = s.day(r.d0), s.day(r.d1) + 1
-    values = np.tensordot(w, np.nan_to_num(s.cube[:, a:b, q.hour_from:q.hour_to + 1]), axes=(0, 0))  # [D, H]
+    # только дни, где есть прогноз: дни факта из файла вне периода прогноза не размывают средние нулями
+    idx = a + np.flatnonzero((s.source[w > 0, a:b] >= 0).any(axis=0))
+    values = np.tensordot(w, np.nan_to_num(s.cube[:, idx, q.hour_from:q.hour_to + 1]), axes=(0, 0))  # [D, H]
     daily = values.sum(axis=1)
     total = float(daily.sum())
-    n_days = b - a
+    n_days = len(idx)
 
     hours = list(range(q.hour_from, q.hour_to + 1))
-    by_hour = values.mean(axis=0)
+    by_hour = values.mean(axis=0) if n_days else np.zeros(len(hours))
     di, hi = np.unravel_index(int(values.argmax()), values.shape) if values.size else (0, 0)
     peak_day = int(daily.argmax()) if n_days else 0
 
-    types = s.daytype[a:b]
+    types = s.daytype[idx]
     by_daytype = {}
     for t in DAYTYPES:
         m = types == t
@@ -261,16 +359,16 @@ def _summary_cached(version: str, q: Query) -> dict:
             by_daytype[t] = {"days": int(m.sum()), "total": round(float(daily[m].sum()), 1),
                              "per_day": round(float(daily[m].mean()), 1)}
 
-    src = s.source[w > 0, a:b]
+    src = s.source[w > 0][:, idx]
     return {
         "query": _describe(s, q, r),
         "total": round(total, 1),
         "days": n_days,
         "per_day": round(total / n_days, 1) if n_days else 0,
         "per_hour": round(float(values.mean()), 1) if values.size else 0,
-        "peak": {"date": s.date_at(a + int(di)).isoformat(), "hour": hours[int(hi)],
+        "peak": {"date": s.date_at(int(idx[di])).isoformat(), "hour": hours[int(hi)],
                  "value": round(float(values[di, hi]), 1)} if values.size else None,
-        "peak_day": {"date": s.date_at(a + peak_day).isoformat(), "value": round(float(daily[peak_day]), 1)} if n_days else None,
+        "peak_day": {"date": s.date_at(int(idx[peak_day])).isoformat(), "value": round(float(daily[peak_day]), 1)} if n_days else None,
         "peak_hour_of_day": {"hour": hours[int(by_hour.argmax())], "avg": round(float(by_hour.max()), 1)} if values.size else None,
         "by_daytype": by_daytype,
         "source": _source_label(src.ravel()),
@@ -299,6 +397,8 @@ def table(q: Query) -> tuple[list[dict], dict]:
             if q.stop_id is not None:
                 row["stop_id"] = q.stop_id
                 row["stop_name"] = s.stops.iloc[s.stop_idx[q.stop_id]]["name"]
+            if "fact" in p:
+                row["fact"] = p["fact"]
             row["prediction"] = p["value"]
             row["source"] = p["source"]
             rows.append(row)
@@ -318,7 +418,10 @@ def _map_cached(version: str, day: str | None, hour: int | None, route: int | No
         raise bad_request("Час должен быть в диапазоне 0–23.", code="invalid_hours")
     w = weights(s, route, None)
     i = s.day(d)
-    per_route = np.nan_to_num(s.cube[:, i, hour] if hour is not None else s.cube[:, i, :].sum(axis=1)) * w
+    # набор валидаций: в день без прогноза (период файла вне прогноза) на карте — факт из файла
+    use_fact = s.fact_cube is not None and not (s.source[w > 0, i] >= 0).any()
+    cube = s.fact_cube if use_fact else s.cube
+    per_route = np.nan_to_num(cube[:, i, hour] if hour is not None else np.nansum(cube[:, i, :], axis=1)) * w
     per_stop = per_route @ s.share
     mask = (s.share[w > 0].sum(axis=0) > 0) if len(s.stops) else np.array([], dtype=bool)
     stops = [{"stop_id": int(sid), "value": round(float(v), 1)}
@@ -329,7 +432,7 @@ def _map_cached(version: str, day: str | None, hour: int | None, route: int | No
         "max": max((x["value"] for x in stops), default=0),
         "routes": [{"route": rt, "value": round(float(per_route[s.route_idx[rt]]), 1)}
                    for rt in s.routes if w[s.route_idx[rt]] > 0],
-        "source": _source_label(s.source[w > 0, i]),
+        "source": "fact" if use_fact else _source_label(s.source[w > 0, i]),
     }
 
 

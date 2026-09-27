@@ -1,6 +1,6 @@
 export type Horizon = 'day' | 'month' | 'year';
 export type Granularity = 'hour' | 'day' | 'week' | 'month';
-export type Source = 'model' | 'baseline' | 'mixed' | 'none';
+export type Source = 'model' | 'baseline' | 'mixed' | 'none' | 'fact';
 
 export interface Meta {
   ready: boolean;
@@ -21,13 +21,23 @@ export interface Meta {
   limits?: { csv_bytes: number; xlsx_bytes: number };
 }
 
-/** Набор данных из залитого файла: ключи route/date/hour, значения — прогноз модели. */
+/** Набор данных из залитого файла: сырые валидации (факт + прогноз модели по их ключам) или ключи route/date/hour. */
 export interface Dataset {
   id: string;
   name: string;
+  kind?: 'validations' | 'keys';
   rows: number;
   ok: number;
   errors: number;
+  /** только для сырых валидаций */
+  boardings?: number;
+  skipped?: number;
+  keys?: number;
+  warning?: string;
+  /** пересечение периода факта с периодом прогноза; null — не пересекаются */
+  overlap?: [string, string] | null;
+  note?: string;
+  trimmed_days?: string[];
   range: [string, string] | null;
   routes: number[];
   source: string;
@@ -78,11 +88,14 @@ export interface ForecastQuery {
 
 export interface Point {
   t: string;
-  value: number;
+  /** null — прогноза на эту дату нет (например, период факта из файла до начала прогноза) */
+  value: number | null;
   source: Source;
   date?: string;
   hour?: number;
   days?: number;
+  /** факт посадок из залитого файла валидаций; null — в файле нет данных */
+  fact?: number | null;
 }
 
 export interface ForecastResponse {
@@ -90,6 +103,9 @@ export interface ForecastResponse {
   unit: string;
   total: number;
   points: Point[];
+  fact_total?: number;
+  /** прогноз против факта только в часах, где есть и то и другое */
+  compare?: { from: string; to: string; forecast: number; fact: number; error_pct: number | null } | null;
 }
 
 export interface DaytypeStat {
