@@ -259,3 +259,18 @@ def test_raw_validations_before_forecast(client):
 def test_meta_limits(client):
     m = client.get("/api/meta").json()
     assert m["limits"]["csv_bytes"] == int(2.5 * 1024 ** 3) and m["has_baseline"] is True
+
+
+def test_map_load_scale_per_route_and_day(client):
+    # прогноз = маршрут·10 + час: у маршрута 1 максимум суток в 23:00 (33), в 0:00 — 10
+    top = max(client.get("/api/map", params={"date": "2025-11-03", "hour": 23}).json()["stops"], key=lambda x: x["load"])
+    assert top["load"] == 1
+    night = {x["stop_id"]: x["load"] for x in client.get("/api/map", params={"date": "2025-11-03", "hour": 0}).json()["stops"]}
+    assert abs(night[top["stop_id"]] - 10 / 33) < 1e-3
+    m = client.get("/api/map", params={"date": "2025-11-03", "hour": 0}).json()
+    r1 = next(r for r in m["routes"] if r["route"] == 1)
+    assert r1["day_max"] > 0 and all(0 <= x["load"] <= 1 for x in m["stops"])
+    whole = client.get("/api/map", params={"date": "2025-11-03"}).json()   # за день: максимум — сумма суток
+    assert max(x["load"] for x in whole["stops"]) == 1
+    base = client.get("/api/map", params={"date": "2025-11-03", "hour": 23, "source": "baseline"}).json()
+    assert max(x["load"] for x in base["stops"]) <= 1
