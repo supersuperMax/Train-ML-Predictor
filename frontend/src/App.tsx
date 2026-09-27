@@ -11,6 +11,7 @@ import { ErrorBox, Loading } from './components/Status';
 import { alertInfo, alertWarn, btn, card, cardHead, cardTitle, muted } from './ui';
 import { useTheme } from './theme';
 import { MoonIcon, SunIcon } from './components/icons';
+import TramStrip from './components/TramStrip';
 
 // Карта (MapLibre) — самый тяжёлый модуль, грузим её отдельным чанком.
 const MapPanel = lazy(() => import('./components/MapPanel'));
@@ -30,9 +31,11 @@ export default function App() {
   const [dataset, setDataset] = useState<Dataset | null>(null);
   useEffect(() => {
     if (meta.data?.available && !filters) {
-      // по умолчанию — первый день прогноза модели (ноябрь 2026), а не начало всего диапазона
+      // по умолчанию — первый день прогноза модели (ноябрь 2025), а не начало всего диапазона
       const start = meta.data.sources?.model?.[0] ?? meta.data.available.from;
       setFilters({ horizon: 'day', date: start, route: null, stopId: null, hourFrom: 0, hourTo: 23, granularity: null });
+      // при входе на сайт графики и карта показывают baseline; модель и файл — переключателем
+      setSource(meta.data.has_baseline ? 'baseline' : 'model');
     }
   }, [meta.data, filters]);
 
@@ -49,15 +52,26 @@ export default function App() {
   const summary = useApi<Summary>(filters ? '/summary' : null, params);
 
   const update = (patch: Partial<Filters>) => setFilters((f) => (f ? { ...f, ...patch } : f));
-  const changeSource = (next: string, date?: string) => {
+  const changeSource = (next: string, date?: string, patch?: Partial<Filters>) => {
     setSource(next);
-    if (date) update({ date });
+    if (date || patch) update({ ...patch, ...(date ? { date } : {}) });
   };
+  // Набор валидаций расширяет шкалу на период своего факта (например, сентябрь–октябрь до начала прогноза).
+  const factRange = source.startsWith('file:') && dataset?.kind === 'validations' ? dataset.range : null;
+  const available =
+    meta.data?.available && factRange
+      ? {
+          from: factRange[0] < meta.data.available.from ? factRange[0] : meta.data.available.from,
+          to: factRange[1] > meta.data.available.to ? factRange[1] : meta.data.available.to,
+        }
+      : meta.data?.available;
   const sourceTitle = source === 'baseline' ? 'baseline' : source.startsWith('file:') ? `файл ${dataset?.name ?? ''}` : 'модель';
   const routeInfo = routes.data?.find((r) => r.route === filters?.route);
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <>
+      <TramStrip />
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Прогноз пассажиропотока</h1>
@@ -67,7 +81,6 @@ export default function App() {
         {meta.data?.ready && (
           <div className="text-right text-xs leading-5 text-slate-500 dark:text-slate-400">
             <div>Прогноз: {dateRu(meta.data.available!.from)} — {dateRu(meta.data.available!.to)}</div>
-            <div>Модель: {meta.data.model}</div>
             <div title={meta.data.version}>Обновлён: {new Date(meta.data.created_at!).toLocaleString('ru-RU')}</div>
           </div>
         )}
@@ -97,7 +110,7 @@ export default function App() {
             <PredictPanel meta={meta.data} routes={routes.data ?? []} source={source} dataset={dataset} onSource={changeSource} onDataset={setDataset} />
           </div>
 
-          <FiltersPanel filters={filters} onChange={update} routes={routes.data ?? []} stops={allStops.data?.stops ?? []} available={meta.data.available} />
+          <FiltersPanel filters={filters} onChange={update} routes={routes.data ?? []} stops={allStops.data?.stops ?? []} available={available} />
 
           <div className="flex flex-col gap-6">
             <section className={card}>
@@ -113,12 +126,16 @@ export default function App() {
               {forecast.data && (
                 <>
                   <div className={forecast.loading ? 'opacity-55 transition-opacity' : 'transition-opacity'}>
-                    <ForecastChart data={forecast.data} dark={dark} />
+                    <ForecastChart data={forecast.data} dark={dark} solid={source === 'baseline'} />
                   </div>
                   <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
                     {dateRu(forecast.data.query.from)} — {dateRu(forecast.data.query.to)} · итого {num(forecast.data.total)} посадок
+                    {forecast.data.fact_total !== undefined && ` · факт ${num(forecast.data.fact_total)} посадок`}
+                    {forecast.data.compare?.error_pct != null &&
+                      ` · отклонение прогноза от факта за ${dateRu(forecast.data.compare.from)}${forecast.data.compare.to !== forecast.data.compare.from ? ` — ${dateRu(forecast.data.compare.to)}` : ''}: ${forecast.data.compare.error_pct > 0 ? '+' : ''}${forecast.data.compare.error_pct.toFixed(1).replace('.', ',').replace('-', '−')} %`}
+                    {forecast.data.fact_total !== undefined && !forecast.data.compare && dataset?.note && ` · ${dataset.note}`}
                     {forecast.data.query.truncated && ' · период обрезан до доступного прогноза'}
-                    {forecast.data.points.some((p) => p.source !== 'model') && (
+                    {source !== 'baseline' && forecast.data.points.some((p) => p.source === 'baseline' || p.source === 'mixed') && (
                       <> · <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">серые столбцы — {SOURCE_LABEL.baseline}, за пределами горизонта модели</span></>
                     )}
                   </p>
@@ -137,7 +154,7 @@ export default function App() {
                 selectedStop={filters.stopId}
                 dark={dark}
                 source={source}
-                available={meta.data.available}
+                available={available}
                 onDateChange={(date) => update({ date })}
                 onSelectStop={(stopId, stopRoutes) =>
                   update({ stopId, route: filters.route !== null && stopRoutes.includes(filters.route) ? filters.route : stopRoutes[0] })
@@ -147,6 +164,7 @@ export default function App() {
           </div>
         </>
       )}
-    </main>
+      </main>
+    </>
   );
 }

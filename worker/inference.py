@@ -43,9 +43,12 @@ def run(cfg: Config) -> dict:
             raise model_adapter.ModelError("Файл прогноза не содержит дат в заданном диапазоне")
         start, end = pred["date"].min(), pred["date"].max()
         if cfg.model_fallback == "baseline" and len(history):
-            # baseline заполняет и промежуток между концом истории и началом модели, и хвост до FORECAST_END
+            # baseline заполняет промежуток между концом истории и началом модели, а хвост после файла —
+            # только до явно заданного FORECAST_END: по умолчанию период прогноза = период файла модели
             f_start, f_end = forecast_range(cfg, history)
-            start, end = min(start, f_start), max(end, f_end)
+            start = min(start, f_start)
+            if cfg.forecast_end:
+                end = max(end, f_end)
     else:
         start, end = forecast_range(cfg, history)
         keys = model_adapter.grid(cfg.routes, start, end)

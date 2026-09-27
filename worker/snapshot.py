@@ -48,6 +48,8 @@ def run(cfg: Config, details: dict | None = None) -> dict:
     features.calendar(forecast["date"]).to_parquet(tmp / "calendar.parquet", index=False)
     route_stops.to_parquet(tmp / "route_stops.parquet", index=False)
     routes.to_parquet(tmp / "routes.parquet", index=False)
+    if (cfg.store_dir / "route_lines.parquet").exists():
+        shutil.copy(cfg.store_dir / "route_lines.parquet", tmp / "route_lines.parquet")
     has_baseline = (cfg.store_dir / "baseline.parquet").exists()
     if has_baseline:
         shutil.copy(cfg.store_dir / "baseline.parquet", tmp / "baseline.parquet")

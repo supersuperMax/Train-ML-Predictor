@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LngLatBounds, Map as MapLibre, NavigationControl, Popup, setWorkerUrl, type GeoJSONSource, type LngLatBoundsLike, type MapLayerMouseEvent, type StyleSpecification } from 'maplibre-gl';
+import { LngLatBounds, Map as MapLibre, Popup, setWorkerUrl, type GeoJSONSource, type LngLatBoundsLike, type MapLayerMouseEvent, type StyleSpecification } from 'maplibre-gl';
 // MapLibre 6 ищет worker рядом со своим модулем, а после сборки его там нет — без worker'а GeoJSON-слои
 // (маршруты и остановки) не рисуются. Отдаём Vite собрать worker и передаём его адрес явно.
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
@@ -7,11 +7,16 @@ import type { FeatureCollection, Point } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { MapState, StopsResponse } from '../types';
 import { num, pad2 } from '../format';
+import { MinusIcon, PlusIcon } from './icons';
 
 const ROUTE_COLORS = ['#1468e8', '#e5383b', '#2a9d8f', '#8d5cf6', '#f59e0b', '#0ea5e9', '#db2777', '#65a30d'];
 const MOSCOW: [number, number] = [37.62, 55.75];
 // Вся Москва вместе с Новой Москвой (с небольшим запасом): за эти пределы карту не увести.
 const MOSCOW_BOUNDS: LngLatBoundsLike = [[36.75, 55.10], [38.02, 56.05]];
+const MIN_ZOOM = 8.5;
+const MAX_ZOOM = 18;
+const zoomBtn =
+  'flex size-8 cursor-pointer items-center justify-center rounded-md hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-slate-800';
 
 setWorkerUrl(workerUrl);
 
@@ -39,21 +44,46 @@ interface Props {
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
+const popupHtml = (p: { name: string; value: number; routes: string }) =>
+  `<div class="font-semibold">${escapeHtml(p.name)}</div>` +
+  `<div class="text-slate-500 dark:text-slate-400">Маршруты: ${JSON.parse(p.routes).join(', ')}</div>` +
+  `<div>Прогноз: <b>${num(p.value)}</b> посадок</div>`;
+
 const empty: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 export default function MapView({ stops, state, selectedStop, dark, onSelectStop }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibre | null>(null);
+  const popupRef = useRef<Popup | null>(null);
+  // Остановка под курсором: при смене часа окно над ней перерисовывается с новым значением.
+  const hoverRef = useRef<number | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [zoom, setZoom] = useState(10.2);
   const onSelectRef = useRef(onSelectStop);
   onSelectRef.current = onSelectStop;
 
   useEffect(() => {
     if (!container.current) return;
-    const map = new MapLibre({ container: container.current, style: STYLE, center: MOSCOW, zoom: 10.2, maxBounds: MOSCOW_BOUNDS, minZoom: 8.5 });
-    map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
+    // Вращение и наклон выключены: правая кнопка мыши и жесты больше не поворачивают карту.
+    const map = new MapLibre({
+      container: container.current,
+      style: STYLE,
+      center: MOSCOW,
+      zoom: 10.2,
+      maxBounds: MOSCOW_BOUNDS,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
+      maxPitch: 0,
+    });
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
     mapRef.current = map;
+    map.on('zoom', () => setZoom(map.getZoom()));
     const popup = new Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+    popupRef.current = popup;
 
     map.on('load', () => {
       map.addSource('lines', { type: 'geojson', data: empty });
@@ -62,7 +92,12 @@ export default function MapView({ stops, state, selectedStop, dark, onSelectStop
         id: 'lines',
         type: 'line',
         source: 'lines',
-        paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.55 },
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 3.5, 13, 6, 16, 10],
+          'line-opacity': 0.8,
+        },
       });
       map.addLayer({
         id: 'stops',
@@ -79,19 +114,17 @@ export default function MapView({ stops, state, selectedStop, dark, onSelectStop
       map.on('mouseenter', 'stops', () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', 'stops', () => {
         map.getCanvas().style.cursor = '';
+        hoverRef.current = null;
         popup.remove();
       });
       map.on('mousemove', 'stops', (e: MapLayerMouseEvent) => {
         const f = e.features?.[0];
         if (!f) return;
-        const p = f.properties as { name: string; value: number; routes: string };
+        const p = f.properties as { stop_id: number; name: string; value: number; routes: string };
+        hoverRef.current = p.stop_id;
         popup
           .setLngLat((f.geometry as Point).coordinates as [number, number])
-          .setHTML(
-            `<div class="font-semibold">${escapeHtml(p.name)}</div>` +
-              `<div class="text-slate-500 dark:text-slate-400">Маршруты: ${JSON.parse(p.routes).join(', ')}</div>` +
-              `<div>Прогноз: <b>${num(p.value)}</b> посадок</div>`,
-          )
+          .setHTML(popupHtml(p))
           .addTo(map);
       });
       map.on('click', 'stops', (e: MapLayerMouseEvent) => {
@@ -131,26 +164,27 @@ export default function MapView({ stops, state, selectedStop, dark, onSelectStop
     if (!map || !loaded || !stops) return;
     const values = new Map((state?.stops ?? []).map((s) => [s.stop_id, s.value]));
     const max = state?.max || 1;
-    (map.getSource('stops') as GeoJSONSource).setData({
-      type: 'FeatureCollection',
-      features: stops.stops.map((s) => {
-        const value = values.get(s.stop_id) ?? 0;
-        return {
-          type: 'Feature',
-          properties: {
-            stop_id: s.stop_id,
-            name: s.name,
-            routes: JSON.stringify(s.routes),
-            value,
-            norm: Math.min(1, value / max),
-            selected: s.stop_id === selectedStop,
-            stroke: dark ? '#0f172a' : '#ffffff',
-            selectedStroke: dark ? '#ffffff' : '#0f172a',
-          },
-          geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
-        };
-      }),
+    const features = stops.stops.map((s) => {
+      const value = values.get(s.stop_id) ?? 0;
+      return {
+        type: 'Feature' as const,
+        properties: {
+          stop_id: s.stop_id,
+          name: s.name,
+          routes: JSON.stringify(s.routes),
+          value,
+          norm: Math.min(1, value / max),
+          selected: s.stop_id === selectedStop,
+          stroke: dark ? '#0f172a' : '#ffffff',
+          selectedStroke: dark ? '#ffffff' : '#0f172a',
+        },
+        geometry: { type: 'Point' as const, coordinates: [s.lon, s.lat] },
+      };
     });
+    (map.getSource('stops') as GeoJSONSource).setData({ type: 'FeatureCollection', features });
+    // Окно над остановкой под курсором само не обновится (оно пишется в mousemove) — обновляем при смене часа/даты.
+    const hovered = features.find((f) => f.properties.stop_id === hoverRef.current);
+    if (hovered) popupRef.current?.setHTML(popupHtml(hovered.properties));
   }, [stops, state, selectedStop, dark, loaded]);
 
   // Тёмная подложка без внешних сервисов: инвертируем яркость тайлов OSM и возвращаем оттенки поворотом на 180°.
@@ -167,6 +201,25 @@ export default function MapView({ stops, state, selectedStop, dark, onSelectStop
   return (
     <div className="relative">
       <div ref={container} className="h-[600px] overflow-hidden rounded-lg" />
+      <div className="absolute top-2.5 right-2.5 flex flex-col items-center gap-1 rounded-md bg-white/90 p-1 text-slate-700 shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-900/90 dark:text-slate-300 dark:ring-white/10">
+        <button type="button" className={zoomBtn} onClick={() => mapRef.current?.zoomIn()} disabled={zoom >= MAX_ZOOM} aria-label="Приблизить" title="Приблизить">
+          <PlusIcon className="size-4" />
+        </button>
+        <input
+          type="range"
+          className="h-28 w-6 cursor-pointer accent-blue-600 [direction:rtl] [writing-mode:vertical-lr] dark:accent-blue-500"
+          min={MIN_ZOOM}
+          max={MAX_ZOOM}
+          step={0.1}
+          value={zoom}
+          onChange={(e) => mapRef.current?.jumpTo({ zoom: Number(e.target.value) })}
+          aria-label="Масштаб"
+          title="Масштаб"
+        />
+        <button type="button" className={zoomBtn} onClick={() => mapRef.current?.zoomOut()} disabled={zoom <= MIN_ZOOM} aria-label="Отдалить" title="Отдалить">
+          <MinusIcon className="size-4" />
+        </button>
+      </div>
       <div className="absolute bottom-2.5 left-2.5 flex max-w-[calc(100%-20px)] flex-col gap-1.5 rounded-md bg-white/90 px-2.5 py-2 text-xs text-slate-700 shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-900/90 dark:text-slate-300 dark:ring-white/10">
         <div className="flex items-center gap-1.5">
           <span>0</span>
@@ -176,7 +229,7 @@ export default function MapView({ stops, state, selectedStop, dark, onSelectStop
         <div className="flex flex-wrap gap-2">
           {routes.map((r, i) => (
             <span key={r}>
-              <i className="mr-1 inline-block h-1 w-3 rounded-sm align-middle" style={{ background: ROUTE_COLORS[i % ROUTE_COLORS.length] }} />№ {r}
+              <i className="mr-1 inline-block h-1.5 w-4 rounded-full align-middle" style={{ background: ROUTE_COLORS[i % ROUTE_COLORS.length] }} />№ {r}
             </span>
           ))}
         </div>

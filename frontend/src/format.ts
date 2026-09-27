@@ -26,6 +26,7 @@ export const SOURCE_LABEL: Record<Source, string> = {
   baseline: 'baseline (не ML)',
   mixed: 'модель + baseline',
   none: 'нет данных',
+  fact: 'факт из файла',
 };
 
 export const DAYTYPE_LABEL = { weekday: 'Будни', sat: 'Суббота', sun: 'Воскресенье', holiday: 'Праздники' } as const;
