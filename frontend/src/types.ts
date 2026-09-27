@@ -131,9 +131,11 @@ export interface MapState {
   date: string;
   hour: number | null;
   route: number | null;
-  stops: { stop_id: number; value: number }[];
+  /** load — загруженность 0…1: доля от максимума посадок на остановке своего маршрута за эти сутки */
+  stops: { stop_id: number; value: number; load: number }[];
   max: number;
-  routes: { route: number; value: number }[];
+  /** day_max — максимум посадок на остановке маршрута за сутки (граница красного цвета) */
+  routes: { route: number; value: number; day_max: number }[];
   source: Source;
 }
 

@@ -2,7 +2,7 @@
 // В тёмной теме город и трамвай темнее, в части окон горит свет. При «уменьшить движение» трамвай стоит.
 
 const CITY_W = 2400;
-const CITY_H = 52;
+const CITY_H = 68; // выше провода: башни заходят за контактную сеть
 
 /** Детерминированный ГПСЧ (mulberry32): город одинаковый при каждой загрузке и не прыгает между рендерами. */
 function rng(seed: number) {
@@ -21,8 +21,10 @@ const CITY = (() => {
   let windows = '';
   let lit = '';
   for (let x = rand() * 10; x < CITY_W; ) {
-    const w = 60 + Math.round(rand() * 50);
-    const floors = rand() < 0.3 ? 4 : 5;
+    // примерно каждый третий дом — узкая башня в 7–8 этажей, выше проводов; остальные — хрущёвки в 4–5 этажей
+    const tower = rand() < 0.35;
+    const w = tower ? 40 + Math.round(rand() * 20) : 60 + Math.round(rand() * 50);
+    const floors = tower ? (rand() < 0.5 ? 7 : 8) : rand() < 0.3 ? 4 : 5;
     const h = floors * 8 + 4;
     const top = CITY_H - h;
     houses += `M${x} ${CITY_H}V${top}h${w}V${CITY_H}Z`;
@@ -42,7 +44,7 @@ const CITY = (() => {
 
 function City() {
   return (
-    <svg viewBox={`0 0 ${CITY_W} ${CITY_H}`} preserveAspectRatio="xMinYMax slice" className="absolute inset-x-0 bottom-3 h-[52px] w-full" aria-hidden="true">
+    <svg viewBox={`0 0 ${CITY_W} ${CITY_H}`} preserveAspectRatio="xMinYMax slice" className="absolute inset-x-0 bottom-3 h-[68px] w-full" aria-hidden="true">
       <path d={CITY.houses} className="fill-slate-300 dark:fill-slate-800" />
       <path d={CITY.windows} className="fill-slate-100 dark:fill-slate-700" />
       <path d={CITY.lit} className="fill-slate-100 dark:fill-amber-300" />

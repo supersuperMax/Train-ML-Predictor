@@ -421,16 +421,28 @@ def _map_cached(version: str, day: str | None, hour: int | None, route: int | No
     # набор валидаций: в день без прогноза (период файла вне прогноза) на карте — факт из файла
     use_fact = s.fact_cube is not None and not (s.source[w > 0, i] >= 0).any()
     cube = s.fact_cube if use_fact else s.cube
-    per_route = np.nan_to_num(cube[:, i, hour] if hour is not None else np.nansum(cube[:, i, :], axis=1)) * w
+    day_cube = np.nan_to_num(cube[:, i, :])                                  # [R, 24]
+    per_route = (day_cube[:, hour] if hour is not None else day_cube.sum(axis=1)) * w
     per_stop = per_route @ s.share
+
+    # Загруженность: у каждого маршрута своя шкала на эти сутки. Максимум посадок на остановке маршрута за сутки
+    # (max по часам × max доли остановки; в режиме «за день» — сумма суток × max доли) — это 1 (красный), 0 посадок — 0 (зелёный).
+    # Общая остановка берёт самый загруженный из своих маршрутов.
+    top_share = s.share.max(axis=1) if s.share.size else np.zeros(len(s.routes), dtype=np.float32)
+    day_max = (day_cube.max(axis=1) if hour is not None else day_cube.sum(axis=1)) * top_share * (w > 0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rel = np.where(day_max[:, None] > 0, per_route[:, None] * s.share / day_max[:, None], 0)   # [R, S]
+    load = np.clip(rel.max(axis=0), 0, 1) if rel.size else np.zeros(len(s.stops))
+
     mask = (s.share[w > 0].sum(axis=0) > 0) if len(s.stops) else np.array([], dtype=bool)
-    stops = [{"stop_id": int(sid), "value": round(float(v), 1)}
-             for sid, v, m in zip(s.stops["stop_id"], per_stop, mask) if m]
+    stops = [{"stop_id": int(sid), "value": round(float(v), 1), "load": round(float(ld), 3)}
+             for sid, v, ld, m in zip(s.stops["stop_id"], per_stop, load, mask) if m]
     return {
         "date": d.isoformat(), "hour": hour, "route": route, "version": s.version,
         "stops": stops,
         "max": max((x["value"] for x in stops), default=0),
-        "routes": [{"route": rt, "value": round(float(per_route[s.route_idx[rt]]), 1)}
+        "routes": [{"route": rt, "value": round(float(per_route[s.route_idx[rt]]), 1),
+                    "day_max": round(float(day_max[s.route_idx[rt]]), 1)}
                    for rt in s.routes if w[s.route_idx[rt]] > 0],
         "source": "fact" if use_fact else _source_label(s.source[w > 0, i]),
     }

@@ -44,10 +44,11 @@ interface Props {
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-const popupHtml = (p: { name: string; value: number; routes: string }) =>
+const popupHtml = (p: { name: string; value: number; norm: number; routes: string }) =>
   `<div class="font-semibold">${escapeHtml(p.name)}</div>` +
   `<div class="text-slate-500 dark:text-slate-400">Маршруты: ${JSON.parse(p.routes).join(', ')}</div>` +
-  `<div>Прогноз: <b>${num(p.value)}</b> посадок</div>`;
+  `<div>Прогноз: <b>${num(p.value)}</b> посадок</div>` +
+  `<div>Загруженность: <b>${Math.round(p.norm * 100)} %</b> от максимума маршрута за сутки</div>`;
 
 const empty: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -120,7 +121,7 @@ export default function MapView({ stops, state, selectedStop, dark, onSelectStop
       map.on('mousemove', 'stops', (e: MapLayerMouseEvent) => {
         const f = e.features?.[0];
         if (!f) return;
-        const p = f.properties as { stop_id: number; name: string; value: number; routes: string };
+        const p = f.properties as { stop_id: number; name: string; value: number; norm: number; routes: string };
         hoverRef.current = p.stop_id;
         popup
           .setLngLat((f.geometry as Point).coordinates as [number, number])
@@ -162,10 +163,11 @@ export default function MapView({ stops, state, selectedStop, dark, onSelectStop
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded || !stops) return;
-    const values = new Map((state?.stops ?? []).map((s) => [s.stop_id, s.value]));
-    const max = state?.max || 1;
+    // Цвет и размер — загруженность из API: у каждого маршрута своя шкала на эти сутки
+    // (максимум посадок на его остановках за сутки = красный, 0 = зелёный).
+    const byStop = new Map((state?.stops ?? []).map((s) => [s.stop_id, s]));
     const features = stops.stops.map((s) => {
-      const value = values.get(s.stop_id) ?? 0;
+      const value = byStop.get(s.stop_id)?.value ?? 0;
       return {
         type: 'Feature' as const,
         properties: {
@@ -173,7 +175,7 @@ export default function MapView({ stops, state, selectedStop, dark, onSelectStop
           name: s.name,
           routes: JSON.stringify(s.routes),
           value,
-          norm: Math.min(1, value / max),
+          norm: byStop.get(s.stop_id)?.load ?? 0,
           selected: s.stop_id === selectedStop,
           stroke: dark ? '#0f172a' : '#ffffff',
           selectedStroke: dark ? '#ffffff' : '#0f172a',
@@ -224,7 +226,7 @@ export default function MapView({ stops, state, selectedStop, dark, onSelectStop
         <div className="flex items-center gap-1.5">
           <span>0</span>
           <i className="h-2 w-24 rounded-full bg-linear-to-r from-green-500 via-yellow-400 to-red-500" />
-          <span>{num(state?.max ?? 0)}</span>
+          <span>макс. маршрута за сутки</span>
         </div>
         <div className="flex flex-wrap gap-2">
           {routes.map((r, i) => (
@@ -233,7 +235,12 @@ export default function MapView({ stops, state, selectedStop, dark, onSelectStop
             </span>
           ))}
         </div>
-        {state && <small>посадок на остановке {state.hour === null ? 'за день' : `в ${pad2(state.hour)}:00`}</small>}
+        {state && (
+          <small>
+            загруженность остановки {state.hour === null ? 'за день' : `в ${pad2(state.hour)}:00`}: доля от максимума посадок
+            на остановках своего маршрута за эти сутки
+          </small>
+        )}
       </div>
     </div>
   );
